@@ -1,0 +1,49 @@
+# Windows 系统文件
+Thumbs.db
+ehthumbs.db
+
+# VSCode 编辑器文件
+.vscode/
+
+# Visual Studio 文件
+.vs/
+.vs2017/
+.vs2019/
+.idea/
+
+# Windows 用户配置文件
+*.user
+*.userosscache
+*.suo
+*.userprefs
+
+# 生成的文件
+[Dd]ebug/
+[Dd]ebugPublic/
+[Dd]Release/
+
+# 用户临时文件
+# Windows
+*.dbmdl
+
+# 依赖项
+packages/
+node_modules/
+
+# NPM 文件夹
+npm-debug.log
+
+# ASP.NET 的临时文件夹
+app_data/
+
+# 其他 VS 生成的文件
+Generated\ Files/
+TestResults/
+
+# WPF 项目的 bin 和 obj 文件夹
+bin/
+obj/
+
+# 如果你的项目使用 .NET Core 或 .NET 5/6/7+
+project.lock.json
+project.fragment.lock.json
