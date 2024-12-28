@@ -10,7 +10,6 @@
     using DingToolExcelTool.Utils;
     using DingToolExcelTool.Data;
     using DingToolExcelTool.Configure;
-    using static System.Runtime.InteropServices.JavaScript.JSType;
 
     public partial class MainWindow : Window
     {
@@ -172,21 +171,23 @@
         }
 
 
-        private void ExportExcel()
+        private bool ExportExcel()
         {
             if (!ExcelManager.Instance.Data.OutputClient && !ExcelManager.Instance.Data.OutputServer)
             {
                 LogMessageHandler.AddWarn($"没有输出路径，不进行相关的导出操作");
-                return;
+                return false;
             }
 
             ClearOutputDir();
 
-            ExcelManager.Instance.GenerateExcelHeadInfo();
-            //ExcelManager.Instance.GenerateProtoMeta();
-            //ExcelManager.Instance.GenerateProtoScript();
-            //ExcelManager.Instance.GenerateProtoData();
-            //ExcelManager.Instance.GenerateExcelScript();
+            bool result = ExcelManager.Instance.GenerateExcelHeadInfo();
+            if (result) result = ExcelManager.Instance.GenerateProtoMeta();
+            if (result) result = ExcelManager.Instance.GenerateProtoScript();
+            if (result) result = ExcelManager.Instance.GenerateProtoData();
+            if (result) result = ExcelManager.Instance.GenerateExcelScript();
+
+            return result;
         }
 
         private void ClearOutputDir()
@@ -284,14 +285,16 @@
             try
             {
                 switch (excutionType)
-                { 
+                {
                     case ExcuteTypeEn.ExportExcel:
                         if (!string.IsNullOrEmpty(tb_preProcessPath.Text)) ExcelUtil.ExcuteProgramFile(tb_preProcessPath.Text, tb_preProcessArgs.Text);
 
-                        ExportExcel();
+                        bool result = ExportExcel();
 
                         if (!string.IsNullOrEmpty(tb_aftProcessPath.Text)) ExcelUtil.ExcuteProgramFile(tb_preProcessPath.Text, tb_aftProcessArgs.Text);
-                        LogMessageHandler.AddInfo("导表 完成");
+
+                        if (result) LogMessageHandler.AddInfo("导表 完成");
+                        else LogMessageHandler.AddError("导表 出现错误，请查看具体问题");
                         break;
                     case ExcuteTypeEn.ClearOutputDir:
                         ClearOutputDir();
@@ -306,6 +309,10 @@
             catch (Exception e)
             {
                 LogMessageHandler.AddError($"{e.Message}\n{e.StackTrace}");
+            }
+            finally
+            {
+                ExcelManager.Instance.Reset();
             }
         }
 

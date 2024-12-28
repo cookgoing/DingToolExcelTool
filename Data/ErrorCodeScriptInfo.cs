@@ -11,6 +11,5 @@
     {
         public string SheetName;
         public List<ErrorCodeScriptFieldInfo> Fields;
-
     }
 }

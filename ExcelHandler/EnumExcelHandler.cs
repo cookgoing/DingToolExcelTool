@@ -1,5 +1,6 @@
 ﻿namespace DingToolExcelTool.ExcelHandler
 {
+    using System.Collections.Concurrent;
     using System.IO;
     using System.Text;
     using ClosedXML.Excel;
@@ -9,7 +10,7 @@
     
     internal class EnumExcelHandler : CommonExcelHandler
     {
-        public Dictionary<string, EnumInfo> EnumDic { get; private set; }//<EnumName, info>
+        public ConcurrentDictionary<string, EnumInfo> EnumDic { get; private set; }//<EnumName, info>
 
         public override void Init()
         {
@@ -55,24 +56,23 @@
                 if (enumFieldNames.Count > 0)
                 {
                     sb.Remove(sb.Length - 1, 1);
-                    throw new Exception($"[GenerateExcelHeadInfo] 枚举表有缺失的字段: {sb}");
+                    throw new Exception($"[GenerateExcelHeadInfo] 枚举表[{headMessageName}]有缺失的字段: {sb}");
                 }
 
-                int columnCount = sheet.ColumnCount();
-                EnumInfo enumInfo = new();
                 HashSet<string> nameSet = new();
                 foreach (IXLRow row in sheet.RowsUsed())
                 {
-                    int columnIdx = 1;
-                    string typeName = row.Cell(columnIdx).GetString();
+                    string typeName = row.Cell(1).GetString();
                     bool isTpyeRow = typeName.StartsWith('#');
-                    if (!isTpyeRow) continue;
+                    if (isTpyeRow) continue;
 
-                    foreach (IXLCell cell in row.CellsUsed())
+                    EnumInfo enumInfo = new();
+                    foreach (IXLCell cell in row.Cells(false))
                     {
+                        int columnIdx = cell.Address.ColumnNumber;
+                        if (columnIdx == 1) continue;
                         if (ExcelUtil.IsRearMergedCell(cell)) continue;
 
-                        columnIdx = cell.Address.ColumnNumber;
                         int fieldIdx = headInfo.GetFieldIdx(columnIdx);
                         if (fieldIdx == -1) throw new Exception($"[GenerateExcelHeadInfo] 表：{headMessageName} 存在字段没有和类型关联上. Address: {cell.Address}");
 
@@ -81,20 +81,24 @@
                         switch (fieldInfo.Name.ToLower())
                         {
                             case "name":
-                                if (!nameSet.Add(columnContent)) throw new Exception($"[GenerateExcelHeadInfo]. 枚举表中出现了相同名字的枚举类型：{columnContent}");
+                                if (!nameSet.Add(columnContent)) throw new Exception($"[GenerateExcelHeadInfo]. 枚举表[{headMessageName}中出现了相同名字的枚举类型：{columnContent}");
                                 enumInfo.Name = columnContent; 
                                 break;
                             case "field":
                                 string[] fieldStrs = columnContent.Split(SpecialExcelCfg.EnumFieldSplitSymbol);
-                                enumInfo.Fields = new EnumFieldInfo[fieldStrs.Length - 1];
-                                for (int i = 0; i < fieldStrs.Length; ++i) enumInfo.Fields[i].Name = fieldStrs[i];
+                                enumInfo.Fields = new EnumFieldInfo[fieldStrs.Length];
+                                for (int i = 0; i < fieldStrs.Length; ++i)
+                                {
+                                    enumInfo.Fields[i] = new ();
+                                    enumInfo.Fields[i].Name = fieldStrs[i];
+                                }
                                 break;
                             case "value":
                                 string[] valueStrs = columnContent.Split(SpecialExcelCfg.EnumFieldSplitSymbol);
-                                if (enumInfo.Fields?.Length != valueStrs.Length) throw new Exception($"[GenerateExcelHeadInfo] 枚举[{enumInfo.Name}] 格式不合规：字段名字和字段的数值数量没有统一");
+                                if (enumInfo.Fields?.Length != valueStrs.Length) throw new Exception($"[GenerateExcelHeadInfo] 枚举表[{headMessageName}，枚举字段：[{enumInfo.Name}] 格式不合规：字段名字和字段的数值数量没有统一");
                                 for (int i = 0; i < valueStrs.Length; ++i)
                                 {
-                                    if (!int.TryParse(valueStrs[i], out int value)) throw new Exception($"[GenerateExcelHeadInfo] 枚举的value字段存在不能解析成int的字段：{valueStrs[i]}");
+                                    if (!int.TryParse(valueStrs[i], out int value)) throw new Exception($"[GenerateExcelHeadInfo] 枚举表[{headMessageName}的value字段存在不能解析成int的字段：{valueStrs[i]}; address: {cell.Address}");
                                     enumInfo.Fields[i].Value = value;
                                 }
                                 break;
@@ -113,14 +117,15 @@
                                 break;
                         }
                     }
-                }
 
-                if (!string.IsNullOrEmpty(enumInfo.Name)) EnumDic.Add(enumInfo.Name, enumInfo);
+                    if (!string.IsNullOrEmpty(enumInfo.Name)) EnumDic.TryAdd(enumInfo.Name, enumInfo);
+                }
             }
         }
 
         public override void GenerateProtoMeta(string metaOutputFile, bool isClient)
         {
+            LogMessageHandler.AddInfo($"[EnumExcelHandler][GenerateProtoMeta]: output: {metaOutputFile}, isClient: {isClient}");
             if (string.IsNullOrEmpty(metaOutputFile))
             {
                 LogMessageHandler.AddWarn($"[GenerateProtoMeta] 不存在 proto meta 的输出路径，将不会执行输出操作");
@@ -143,8 +148,8 @@ package {GeneralCfg.ProtoMetaPackageName};").AppendLine();
             {
                 if ((platform & enumInfo.Platform) == 0) continue;
 
-                metaWriter.AppendLine($"//{enumInfo.Comment}");
-                metaWriter.AppendLine($"message {enumInfo.Name}").AppendLine("{");
+                if (!string.IsNullOrEmpty(enumInfo.Comment)) metaWriter.AppendLine($"//{enumInfo.Comment}");
+                metaWriter.AppendLine($"enum {enumInfo.Name}").AppendLine("{");
                 foreach (EnumFieldInfo fieldInfo in enumInfo.Fields)
                 {
                     metaWriter.AppendLine($"\t{fieldInfo.Name} = {fieldInfo.Value};");
@@ -156,6 +161,7 @@ package {GeneralCfg.ProtoMetaPackageName};").AppendLine();
             metaSW.Close();
             metaWriter.Clear();
         }
+
 
         public override void GenerateProtoData(string excelInputFile, string protoDataOutputFile, bool isClient, ScriptTypeEn scriptType) { }
         public override void GenerateExcelScript(string excelInputFile, string excelScriptOutputDir, bool isClient, ScriptTypeEn scriptType) { }

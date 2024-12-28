@@ -3,13 +3,15 @@
     using Microsoft.CodeAnalysis;
     using Microsoft.CodeAnalysis.CSharp;
     using Microsoft.CodeAnalysis.Emit;
+    using System.Data;
     using System.IO;
     using System.Reflection;
     using System.Text;
+    using Google.Protobuf;
     using DingToolExcelTool.Configure;
     using DingToolExcelTool.Utils;
     using DingToolExcelTool.Data;
-
+    
     internal class CSharpExcelHandler : Singleton<CSharpExcelHandler>, IScriptExcelHandler
     {
         public Dictionary<string, string> BaseType2ScriptMap { get; private set; } = new ()
@@ -29,14 +31,26 @@
 
         public void DynamicCompile(string[] csCodes)
         {
+            typeDic.Clear();
+            objDic.Clear();
+
             SyntaxTree[] syntaxTrees = new SyntaxTree[csCodes.Length];
             for (int i = 0; i < csCodes.Length; ++i) syntaxTrees[i] = CSharpSyntaxTree.ParseText(csCodes[i]);
 
             string pbDllPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Google.Protobuf.dll");
+            string runtimeDllPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Plugins", "System.Runtime.dll");
+            string collectionDllPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Plugins", "System.Collections.dll");
+            MetadataReference[] systemReferences = new[]
+            {
+                MetadataReference.CreateFromFile(pbDllPath),
+                MetadataReference.CreateFromFile(runtimeDllPath),
+                MetadataReference.CreateFromFile(collectionDllPath),
+            };
+
             CSharpCompilation compilation = CSharpCompilation.Create(
                 "ProtoGeneratedAssembly",
                 syntaxTrees: syntaxTrees,
-                references: [AssemblyMetadata.CreateFromFile(pbDllPath).GetReference()],
+                references: systemReferences,
                 options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
             using var memoryStream = new MemoryStream();
@@ -116,23 +130,24 @@
             if (ExcelUtil.IsArrType(typeStr) || ExcelUtil.IsMapType(typeStr)) throw new Exception($"[SetScriptProperty] 逻辑错误 要修改的数据是数组或者字典，不能使用这个方法");
 
             var (type, obj) = GetTypeObj(scriptName);
-
-            PropertyInfo propertyInfo = type.GetProperty(fieldName) ?? throw new Exception($"[SetScriptProperty] C#脚本[{scriptName}]中，没有这个字段：{fieldName}");
+            fieldName = FieldNameInProtoCS(fieldName);
+            FieldInfo fieldInfo = type.GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance) ?? throw new Exception($"[SetScriptProperty] C#脚本[{scriptName}]中，没有这个字段：{fieldName}");
             object value = ExcelType2ScriptType(typeStr, valueStr);
-            propertyInfo.SetValue(obj, value);
+            fieldInfo.SetValue(obj, value);
         }
 
         public void AddScriptList(string scriptName, string fieldName, string typeStr, string valueStr)
         {
             if (!ExcelUtil.IsArrType(typeStr)) throw new Exception($"[AddScriptList] 逻辑错误 不是数组类型，不能使用这个方法");
 
-            var (type, obj) = GetTypeObj(scriptName);
-            PropertyInfo propertyInfo = type.GetProperty(fieldName) ?? throw new Exception($"[AddScriptList] C#脚本[{scriptName}]中，没有这个字段：{fieldName}");
-            object listObj = propertyInfo.GetValue(obj) ?? throw new Exception($"[AddScriptList] C#对象[{scriptName}]中没有这个字段： {fieldName}");
-            MethodInfo addMethod = listObj.GetType().GetMethod("Add") ?? throw new Exception($"[AddScriptList] {scriptName}.{fieldName}; 这个字段不是列表");
-
             string elementType = typeStr.Substring(0, typeStr.Length - 2);
             object value = ExcelType2ScriptType(elementType, valueStr);
+
+            var (type, obj) = GetTypeObj(scriptName);
+            fieldName = FieldNameInProtoCS(fieldName);
+            FieldInfo fieldInfo = type.GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance) ?? throw new Exception($"[AddScriptList] C#脚本[{scriptName}]中，没有这个字段：{fieldName}");
+            object listObj = fieldInfo.GetValue(obj) ?? throw new Exception($"[AddScriptList] C#对象[{scriptName}]中没有这个字段： {fieldName}");
+            MethodInfo addMethod = listObj.GetType().GetMethod("Add", [value.GetType()]) ?? throw new Exception($"[AddScriptList] {scriptName}.{fieldName}; 这个字段不是列表; listType: {listObj.GetType()}; value: {value.GetType()}");
 
             addMethod.Invoke(listObj, [value]);
         }
@@ -141,16 +156,17 @@
         {
             if (!ExcelUtil.IsMapType(typeStr)) throw new Exception($"[AddScriptMap] 逻辑错误 不是字典类型，不能使用这个方法");
 
-            var (type, obj) = GetTypeObj(scriptName);
-            PropertyInfo propertyInfo = type.GetProperty(fieldName) ?? throw new Exception($"[AddScriptMap] C#脚本[{scriptName}]中，没有这个字段：{fieldName}");
-            object dicObj = propertyInfo.GetValue(obj) ?? throw new Exception($"[AddScriptMap] C#对象[{scriptName}]中没有这个字段： {fieldName}");
-            MethodInfo addMethod = dicObj.GetType().GetMethod("Add") ?? throw new Exception($"[AddScriptList] {scriptName}.{fieldName}; 这个字段不是字典");
-
             string innerTypes = typeStr.Substring(4, typeStr.Length - 5);
             string[] keyValue = innerTypes.Split(',');
             string kType = keyValue[0], vType = keyValue[1];
             object kValue = ExcelType2ScriptType(kType, keyData);
             object vValue = ExcelType2ScriptType(vType, valueData);
+
+            var (type, obj) = GetTypeObj(scriptName);
+            fieldName = FieldNameInProtoCS(fieldName);
+            FieldInfo fieldInfo = type.GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance) ?? throw new Exception($"[AddScriptMap] C#脚本[{scriptName}]中，没有这个字段：{fieldName}");
+            object dicObj = fieldInfo.GetValue(obj) ?? throw new Exception($"[AddScriptMap] C#对象[{scriptName}]中没有这个字段： {fieldName}");
+            MethodInfo addMethod = dicObj.GetType().GetMethod("Add", [kValue.GetType(), vValue.GetType()]) ?? throw new Exception($"[AddScriptList] {scriptName}.{fieldName}; 这个字段不是字典");
 
             addMethod.Invoke(dicObj, [kValue, vValue]);
         }
@@ -159,11 +175,15 @@
         {
             var (type, obj) = GetTypeObj(scriptName);
             var (itemType, objType) = GetTypeObj(itemScriptName);
-            PropertyInfo listProperty = type.GetProperty(CommonExcelCfg.ProtoMetaListFieldName) ?? throw new Exception($"[AddListScriptValue] C#脚本[{scriptName}]中，没有这个字段：{CommonExcelCfg.ProtoMetaListFieldName}");
-            object listObj = listProperty.GetValue(obj) ?? throw new Exception($"[AddListScriptValue] C#对象[{scriptName}]中没有这个字段： {CommonExcelCfg.ProtoMetaListFieldName}");
-            MethodInfo addMethod = listObj.GetType().GetMethod("Add") ?? throw new Exception($"[AddScriptList] {scriptName}.{CommonExcelCfg.ProtoMetaListFieldName}; 这个字段不是列表");
+            string fieldName = FieldNameInProtoCS(CommonExcelCfg.ProtoMetaListFieldName);
+
+            FieldInfo listField = type.GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance) ?? throw new Exception($"[AddListScriptValue] C#脚本[{scriptName}]中，没有这个字段：{fieldName}");
+            object listObj = listField.GetValue(obj) ?? throw new Exception($"[AddListScriptValue] C#对象[{scriptName}]中没有这个字段： {fieldName}");
+            MethodInfo addMethod = listObj.GetType().GetMethod("Add", [objType.GetType()]) ?? throw new Exception($"[AddScriptList] {scriptName}.{fieldName}; 这个字段不是列表");
 
             addMethod.Invoke(listObj, [objType]);
+
+            RemoveObj(itemScriptName);
         }
 
         public void SerializeObjInProto(string scriptName, string outputFilePath)
@@ -174,10 +194,11 @@
 
             var (type, obj) = GetTypeObj(scriptName);
 
-            MethodInfo writeMethod = type.GetMethod("WriteTo", [typeof(Stream)]) ?? throw new Exception($"[SerializeObjInProto] 类：{scriptName}，没有 WriteTo 方法，难道不是通过 proto 生成的？");
+            MethodInfo writeMethod = type.GetMethod("WriteTo", [typeof(CodedOutputStream)]) ?? throw new Exception($"[SerializeObjInProto] 类：{scriptName}，没有 WriteTo 方法，难道不是通过 proto 生成的？");
             using var fileStream = new FileStream(outputFilePath, FileMode.OpenOrCreate);
+            using CodedOutputStream outputSteam = new (fileStream);
 
-            writeMethod.Invoke(obj, [fileStream]);
+            writeMethod.Invoke(obj, [outputSteam]);
         }
 
 
@@ -189,6 +210,7 @@
             string dirPath = Path.GetDirectoryName(excelScriptOutputFile);
             if (!Directory.Exists(dirPath)) Directory.CreateDirectory(dirPath);
 
+            PlatformType platform = isClient ? PlatformType.Client : PlatformType.Server;
             string messageName = headInfo.MessageName;
             string scriptName = Path.GetFileNameWithoutExtension(excelScriptOutputFile);
             string dataFileName = $"{messageName}{GeneralCfg.ProtoDataFileSuffix}";
@@ -198,85 +220,105 @@
             StringBuilder classificationActionSB = new();
             StringBuilder dataLoadSB = new();
 
+            List<ExcelFieldInfo> unionKey = new List<ExcelFieldInfo>(headInfo.UnionKey.Count);
+            foreach (ExcelFieldInfo keyField in headInfo.UnionKey)
+            {
+                if ((platform & keyField.Platform) == 0) continue;
+
+                unionKey.Add(keyField);
+            }
+
             foreach (ExcelFieldInfo keyField in headInfo.IndependentKey)
             {
-                dicFieldSB.Append($"public Dictionary<{ExcelType2ScriptTypeStr(keyField.Type)}, {messageName}> {keyField.Name}Dic{{get; private set;}}");
+                if ((platform & keyField.Platform) == 0) continue;
+
+                dicFieldSB.Append($"public Dictionary<{ExcelType2ScriptTypeStr(keyField.Type)}, {messageName}> {keyField.Name}Dic{{get; private set;}} = new();");
             }
-            if (headInfo.UnionKey.Count > 0)
+            
+            if (unionKey.Count > 0)
             {
-                bool onlyOneKey = headInfo.UnionKey.Count == 1;
+                bool onlyOneKey = unionKey.Count == 1;
                 dicFieldSB.Append("public Dictionary<");
                 if (!onlyOneKey) dicFieldSB.Append('(');
-                foreach (ExcelFieldInfo keyField in headInfo.UnionKey)
+                foreach (ExcelFieldInfo keyField in unionKey)
                 {
                     dicFieldSB.Append($"{ExcelType2ScriptTypeStr(keyField.Type)},");
                 }
                 dicFieldSB.Remove(dicFieldSB.Length - 1, 1);
                 if (!onlyOneKey) dicFieldSB.Append(')');
-                dicFieldSB.Append($", {messageName}> Dic{{get; private set;}}");
+                dicFieldSB.Append($", {messageName}> Dic{{get; private set;}} = new();");
             }
 
             foreach (ExcelFieldInfo keyField in headInfo.IndependentKey)
             {
-                classificationActionSB.AppendLine($"{keyField.Name}Dic.Add(item.{keyField.Name}, item)");
+                if ((platform & keyField.Platform) == 0) continue;
+
+                classificationActionSB.Append($"{keyField.Name}Dic.Add(item.{PropertyNameInProtoCS(keyField.Name)}, item);");
             }
-            if (headInfo.UnionKey.Count > 0)
+            if (unionKey.Count > 0)
             {
-                bool onlyOneKey = headInfo.UnionKey.Count == 1;
+                if (classificationActionSB.Length > 0) classificationActionSB.AppendLine();
+
+                bool onlyOneKey = unionKey.Count == 1;
                 classificationActionSB.Append("Dic.Add(");
                 if (!onlyOneKey) classificationActionSB.Append('(');
-                foreach (ExcelFieldInfo keyField in headInfo.UnionKey)
+                foreach (ExcelFieldInfo keyField in unionKey)
                 {
-                    classificationActionSB.Append($"item.{keyField.Name},");
+                    classificationActionSB.Append($"item.{PropertyNameInProtoCS(keyField.Name)},");
                 }
                 classificationActionSB.Remove(classificationActionSB.Length - 1, 1);
                 if (!onlyOneKey) classificationActionSB.Append(')');
                 classificationActionSB.Append($", item);");
             }
 
-            if (isClient) dataLoadSB.Append(@"assetModule = ModuleCollector.GetModule<AssetLoadModule>();
-byte[] serializedData = assetModule.Load<TextAsset>(protoDataPath)?.bytes;");
+            if (isClient) dataLoadSB.Append(@"AssetLoadModule assetModule = ModuleCollector.GetModule<AssetLoadModule>();
+            byte[] serializedData = assetModule.Load<TextAsset>(protoDataPath)?.bytes;");
             else dataLoadSB.Append("byte[] serializedData = File.ReadAllBytes(protoDataPath);");
 
             scriptSB.AppendLine(@$"
-using System.IO
+using System.IO;
+using System.Linq;
 using System.Collections.Generic;
+using UnityEngine;
 using Google.Protobuf;
+using DingFrame.Module;
 using DingFrame.Module.AssetLoader;
 
-namespace {GeneralCfg.ProtoMetaPackageName};
-public class {scriptName}
+namespace {GeneralCfg.ProtoMetaPackageName}
 {{
-    public static {scriptName} Ins{{get; private set;}}
-
-    public {messageName}[] Datas{{get; private set;}}
-    {dicFieldSB}
-
-    public static {scriptName} CreateIns()
+    public class {scriptName}
     {{
-        Ins = new {scriptName}();
-        Ins.ParseProto();
-        Ins.GenerateKV();
-        return Ins;
-    }}
+        public static {scriptName} Ins{{get; private set;}}
 
-    public static void ReleaseIns() => Ins = null;
+        public {messageName}[] Datas{{get; private set;}}
+        {dicFieldSB}
 
-    private void ParseProto()
-    {{
-        string protoDataPath = Path.Combine(GameConfigure.ExcelDataPath, {dataFileName});
-        {dataLoadSB}
-        {messageName}{CommonExcelCfg.ProtoMetaListMessageNameSuffix} msgList = {messageName}{CommonExcelCfg.ProtoMetaListMessageNameSuffix}.Parser.ParseFrom(serializedData);
-        
-        this.Datas = msgList.{CommonExcelCfg.ProtoMetaListFieldName}.ToArray();
-    }}
-
-    private void GenerateKV()
-    {{
-        
-        foreach({messageName} item in Datas)
+        public static {scriptName} CreateIns()
         {{
-            {classificationActionSB}
+            Ins = new {scriptName}();
+            Ins.ParseProto();
+            Ins.GenerateKV();
+            return Ins;
+        }}
+
+        public static void ReleaseIns() => Ins = null;
+
+        private void ParseProto()
+        {{
+            string protoDataPath = Path.Combine(GameConfigure.ExcelProtoDataPath, ""{dataFileName}"");
+            {dataLoadSB}
+            {messageName}{CommonExcelCfg.ProtoMetaListMessageNameSuffix} msgList = {messageName}{CommonExcelCfg.ProtoMetaListMessageNameSuffix}.Parser.ParseFrom(serializedData);
+        
+            Datas = msgList.{CommonExcelCfg.ProtoMetaListFieldName}.ToArray();
+        }}
+
+        private void GenerateKV()
+        {{
+        
+            foreach({messageName} item in Datas)
+            {{
+                {classificationActionSB}
+            }}
         }}
     }}
 }}
@@ -287,23 +329,26 @@ public class {scriptName}
         }
 
 
-        private (Type type, object obj) GetTypeObj(string scriptName)
+        public (Type type, object obj) GetTypeObj(string scriptName)
         {
+            string fullScriptName = $"{GeneralCfg.ProtoMetaPackageName}.{scriptName}";
             if (!typeDic.TryGetValue(scriptName, out Type type))
             {
-                type = assembly.GetType(scriptName) ?? throw new Exception($"[GenerateTypeObj] proto生成的C#程序集不存在 这个类型：{scriptName}");
+                type = assembly.GetType(fullScriptName) ?? throw new Exception($"[GenerateTypeObj] proto生成的C#程序集不存在 这个类型：{fullScriptName}");
                 typeDic.Add(scriptName, type);
             }
             if (!objDic.TryGetValue(scriptName, out object obj))
             {
                 obj = Activator.CreateInstance(type) ?? throw new Exception($"[GenerateTypeObj] 无法生成实例：type: {type}");
                 objDic.Add(scriptName, obj);
-            } 
+            }
 
             return (type, obj);
         }
 
-        private object ExcelType2ScriptType(string typeStr, string valueStr)
+        public bool RemoveObj(string scriptName) => objDic.Remove(scriptName);
+
+        public object ExcelType2ScriptType(string typeStr, string valueStr)
         {
             if (ExcelUtil.IsTypeLocalizationTxt(typeStr) || ExcelUtil.IsTypeLocalizationImg(typeStr)) return valueStr;
             else if (ExcelUtil.IsBaseType(typeStr))
@@ -332,7 +377,8 @@ public class {scriptName}
             }
             else if (ExcelUtil.IsEnumType(typeStr))
             {
-                Type enumType = assembly.GetType(typeStr) ?? throw new Exception($"[CSharpHandler] 这个类型：{typeStr} 通过程序集：{assembly.FullName} 不能生成 Type");
+                string fullTypetName = $"{GeneralCfg.ProtoMetaPackageName}.{typeStr}";
+                Type enumType = assembly.GetType(fullTypetName) ?? throw new Exception($"[CSharpHandler] 这个类型：{fullTypetName} 通过程序集：{assembly.FullName} 不能生成 Type");
 
                 if (!enumType.IsEnum) throw new Exception($"[CSharpHandler] 这个类型：{enumType} 不是枚举类型");
                 if (!Enum.TryParse(enumType, valueStr, true, out var enumValue)) throw new Exception($"{valueStr} 不能转换成这个枚举类型：{enumType}");
@@ -340,6 +386,15 @@ public class {scriptName}
                 return enumValue;
             }
             else throw new Exception($"[CSharpHandler] 未知的类型：{typeStr}");
+        }
+
+        public string FieldNameInProtoCS(string fieldName) => fieldName.ToLower() + "_";
+
+        public string PropertyNameInProtoCS(string fieldName)
+        {
+            StringBuilder sb = new StringBuilder(fieldName);
+            sb[0] = char.ToUpper(sb[0]);
+            return sb.ToString();
         }
     }
 }

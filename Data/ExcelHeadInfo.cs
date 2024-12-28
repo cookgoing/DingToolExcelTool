@@ -19,6 +19,20 @@
         public List<ExcelFieldInfo> UnionKey;
         public List<ExcelFieldInfo> IndependentKey;
 
+        public void Trim()
+        {
+            for (int i = Fields.Count - 1; i >= 0; --i)
+            {
+                ExcelFieldInfo field = Fields[i];
+                if (!string.IsNullOrEmpty(field.Name)
+                    && !string.IsNullOrEmpty(field.Type)) continue;
+
+                Fields.RemoveAt(i);
+                UnionKey.Remove(field);
+                IndependentKey.Remove(field);
+            }
+        }
+
         public void Sort() => Fields.Sort((a, b) => a.StartColumnIdx - b.StartColumnIdx);
 
         public int GetFieldIdx(int columnIdx)
@@ -27,7 +41,7 @@
             {
                 ExcelFieldInfo field = Fields[i];
                 if (columnIdx < field.StartColumnIdx) return -1;
-                if (columnIdx < field.EndColumnIdx) return i;
+                if (columnIdx <= field.EndColumnIdx) return i;
             }
 
             return -1;

@@ -1,5 +1,6 @@
 ﻿namespace DingToolExcelTool.ExcelHandler
 {
+    using System.Collections.Concurrent;
     using System.IO;
     using System.Text;
     using ClosedXML.Excel;
@@ -10,7 +11,7 @@
 
     internal class ErrorCodeExcelHandler : CommonExcelHandler
     {
-        public Dictionary<string, ErrorCodeScriptInfo> ErrorCodeDic { get; private set; }//<script name, ErrorCodeScriptInfo>
+        public ConcurrentDictionary<string, ErrorCodeScriptInfo> ErrorCodeDic { get; private set; }//<script name, ErrorCodeScriptInfo>
 
         public override void Init() 
         {
@@ -56,29 +57,29 @@
                 if (errorCodeFieldNames.Count > 0)
                 {
                     sb.Remove(sb.Length - 1, 1);
-                    throw new Exception($"[GenerateExcelHeadInfo] ErrorCode表有缺失的字段: {sb}");
+                    throw new Exception($"[GenerateExcelHeadInfo] ErrorCode表[{headMessageName}]有缺失的字段: {sb}");
                 }
 
-                int columnCount = sheet.ColumnCount();
                 ErrorCodeScriptInfo scriptInfo = new();
-                scriptInfo.SheetName = headMessageName;
-                scriptInfo.Fields = new(sheet.RowCount());
+                scriptInfo.SheetName = sheet.Name;
+                scriptInfo.Fields = new(10);
                 HashSet<string> codeStrSet = new();
                 HashSet<int> codeSet = new();
                 foreach (IXLRow row in sheet.RowsUsed())
                 {
-                    int columnIdx = 1;
-                    string typeName = row.Cell(columnIdx).GetString();
+                    string typeName = row.Cell(1).GetString();
                     bool isTpyeRow = typeName.StartsWith('#');
-                    if (!isTpyeRow) continue;
+                    if (isTpyeRow) continue;
 
                     ErrorCodeScriptFieldInfo errorCodeField = new();
                     scriptInfo.Fields.Add(errorCodeField);
-                    foreach (IXLCell cell in row.CellsUsed())
+                    foreach (IXLCell cell in row.Cells(false))
                     {
+                        int columnIdx = cell.Address.ColumnNumber;
+                        if (columnIdx == 1) continue;
                         if (ExcelUtil.IsRearMergedCell(cell)) continue;
 
-                        columnIdx = cell.Address.ColumnNumber;
+                        
                         int fieldIdx = headInfo.GetFieldIdx(columnIdx);
                         if (fieldIdx == -1) throw new Exception($"[GenerateExcelHeadInfo] 表：{headMessageName} 存在字段没有和类型关联上. Address: {cell.Address}");
 
@@ -87,11 +88,12 @@
                         switch (fieldInfo.Name.ToLower())
                         {
                             case "code":
-                                if (!int.TryParse(columnContent, out int codeValue)) throw new Exception($"[GenerateExcelHeadInfo]. 表：{headMessageName} code不能解析成整形");
+                                if (!int.TryParse(columnContent, out int codeValue)) throw new Exception($"[GenerateExcelHeadInfo]. 表：{headMessageName}, address: {cell.Address} code[{codeValue}]不能解析成整形");
                                 errorCodeField.Code = codeValue;
                                 break;
-                            case "codeStr":
+                            case "codestr":
                                 if (!codeStrSet.Add(columnContent)) throw new Exception($"[GenerateExcelHeadInfo]. 表：{headMessageName} 中出现了相同名字的 code 名字：{columnContent}; Address: {cell.Address}");
+
                                 errorCodeField.CodeStr = columnContent;
                                 break;
                             case "comment":
@@ -101,7 +103,7 @@
                     }
                 }
 
-                if (!string.IsNullOrEmpty(scriptInfo.SheetName)) ErrorCodeDic.Add(scriptInfo.SheetName, scriptInfo);
+                if (!string.IsNullOrEmpty(scriptInfo.SheetName)) ErrorCodeDic.TryAdd(scriptInfo.SheetName, scriptInfo);
             }
         }
 
@@ -116,7 +118,11 @@
 
             if (frameOutputDir == null || businessOutputDir == null) throw new Exception($"[GenerateExcelScript]. ErrorCode 需要有两个导出路径。 {frameOutputDir} | {businessOutputDir}");
 
-            ExcelUtil.GetScriptSpecialExcelHandler(scriptType).GenerateErrorCodeScript(ErrorCodeDic, Path.Combine(frameOutputDir, SpecialExcelCfg.ErrorCodeFrameScriptFileName), Path.Combine(businessOutputDir, SpecialExcelCfg.ErrorCodeFrameScriptFileName));
+            IScriptExcelHandler scriptExcelHandler = ExcelUtil.GetScriptExcelHandler(scriptType);
+            IScriptSpecialExcelHandler scriptSpecialHandler = ExcelUtil.GetScriptSpecialExcelHandler(scriptType);
+            string frameFilePath = Path.Combine(frameOutputDir, $"{SpecialExcelCfg.ErrorCodeFrameScriptFileName}{scriptExcelHandler.Suffix}");
+            string businessFilePath = Path.Combine(businessOutputDir, $"{SpecialExcelCfg.ErrorCodeBusinessScriptFileName}{scriptExcelHandler.Suffix}");
+            scriptSpecialHandler.GenerateErrorCodeScript(ErrorCodeDic, frameFilePath, businessFilePath);
         }
     }
 }

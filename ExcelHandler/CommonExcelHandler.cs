@@ -2,6 +2,7 @@
 {
     using System.IO;
     using System.Text;
+    using System.Collections.Concurrent;
     using ClosedXML.Excel;
     using DingToolExcelTool.Data;
     using DingToolExcelTool.Utils;
@@ -10,7 +11,7 @@
     
     internal class CommonExcelHandler : IExcelHandler
     {
-        public Dictionary<string, ExcelHeadInfo> HeadInfoDic { get; private set; }
+        public ConcurrentDictionary<string, ExcelHeadInfo> HeadInfoDic { get; private set; }
 
         public virtual void Init() => HeadInfoDic = new();
 
@@ -27,11 +28,10 @@
 
             foreach (IXLWorksheet sheet in wb.Worksheets)
             {
-                int columnCount = sheet.ColumnCount();
                 ExcelHeadInfo headInfo = new();
                 HashSet<string> nameSet = new();
                 headInfo.MessageName = sheetCount == 1 ? $"{excelFileName}" : $"{excelFileName}_{sheet.Name}";
-                headInfo.Fields = new (columnCount - 1);
+                headInfo.Fields = new (10);
                 headInfo.UnionKey = new();
                 headInfo.IndependentKey = new();
 
@@ -40,16 +40,17 @@
                 bool firstRow = true;
                 foreach (IXLRow row in sheet.RowsUsed())
                 {
-                    int columnIdx = 1;
-                    StringBuilder typeName = new(row.Cell(columnIdx).GetString());
+                    StringBuilder typeName = new(row.Cell(1).GetString());
                     if (typeName.Length == 0 || !typeName[0].Equals('#')) continue;
                     
                     typeName.Remove(0, 1);
                     if (!Enum.TryParse(typeName.ToString().ToLower(), out HeadType headType)) throw new Exception($"[GenerateExcelHeadInfo] 表：{headInfo.MessageName} 存在未知的表头字段：{typeName}");
 
                     int fieldIdx = 0;
-                    foreach (IXLCell cell in row.CellsUsed())
+                    foreach (IXLCell cell in row.Cells(false))
                     {
+                        int columnIdx = cell.Address.ColumnNumber;
+                        if (columnIdx == 1) continue;
                         if (ExcelUtil.IsRearMergedCell(cell)) continue;
 
                         string columnContent = cell.GetString().Trim();
@@ -62,15 +63,14 @@
 
                             fieldInfo.StartColumnIdx = startColumnIdx;
                             fieldInfo.EndColumnIdx = endColumnIdx;
-                            LogMessageHandler.AddInfo($"columnContent: {columnContent}; startColumnIdx: {startColumnIdx}; endColumnIdx: {endColumnIdx}; Address: {cell.Address}");
                         }
                         else
                         {
                             bool idxOutofBound = fieldIdx >= headInfo.Fields.Count;
-                            if (idxOutofBound) throw new Exception($"[GenerateExcelHeadInfo] 表：{headInfo.MessageName}。表头信息没有对齐");
+                            if (idxOutofBound) continue;
 
                             fieldInfo = headInfo.Fields[fieldIdx];
-                            if (fieldInfo.StartColumnIdx != startColumnIdx || fieldInfo.EndColumnIdx != endColumnIdx) throw new Exception($"[GenerateExcelHeadInfo] 表：{headInfo.MessageName}。表头信息没有对齐: {cell.Address}; cell: ({startColumnIdx}, {endColumnIdx}); field: ({fieldInfo.StartColumnIdx},{fieldInfo.EndColumnIdx})");
+                            if (fieldInfo.StartColumnIdx != startColumnIdx || fieldInfo.EndColumnIdx != endColumnIdx) throw new Exception($"[GenerateExcelHeadInfo] 表：{headInfo.MessageName}。表头信息没有对齐: {cell.Address}; fieldIdx: {fieldIdx}; cell: ({startColumnIdx}, {endColumnIdx}); field: ({fieldInfo.StartColumnIdx},{fieldInfo.EndColumnIdx})");
                         }
                         fieldIdx++;
 
@@ -102,7 +102,7 @@
                                 }
 
                                 string typeStr = ExcelUtil.ClearKeySymbol(columnContent);
-                                if (!ExcelUtil.IsValidType(typeStr)) throw new Exception($"[GenerateExcelHeadInfo] 表：{headInfo.MessageName} 类型不合法：{typeStr}; 只能是基础数据类型：int, long, double, bool, string, dateTime; 以及预定义的枚举类型; 或者是数组和字典");
+                                if (!ExcelUtil.IsValidType(typeStr)) throw new Exception($"[GenerateExcelHeadInfo] 表：{headInfo.MessageName}, address: {cell.Address} 类型不合法：{typeStr}; 只能是基础数据类型：int, long, double, bool, string, dateTime; 以及预定义的枚举类型; 或者是数组和字典");
 
                                 fieldInfo.Type = typeStr;
                                 fieldInfo.LocalizationTxt = ExcelUtil.IsTypeLocalizationTxt(typeStr);
@@ -118,6 +118,11 @@
                                     _ => PlatformType.Empty,
                                 };
 
+                                if (fieldInfo.Platform == PlatformType.Empty)
+                                {
+                                    LogMessageHandler.AddWarn($"[GenerateExcelHeadInfo] 表：{headInfo.MessageName} Platform 没有指定平台，将不会导出。 Address: {cell.Address}");
+                                    continue;
+                                }
                                 break;
                             case HeadType.comment:
                                 fieldInfo.Comment = columnContent;
@@ -128,13 +133,15 @@
                     firstRow = false;
                 }
 
+                headInfo.Trim();
                 headInfo.Sort();
-                HeadInfoDic.Add(headInfo.MessageName, headInfo);
+                HeadInfoDic.TryAdd(headInfo.MessageName, headInfo);
             }
         }
 
         public virtual void GenerateProtoMeta(string metaOutputFile, bool isClient)
         {
+            LogMessageHandler.AddInfo($"[CommonExcelHandler][GenerateProtoMeta]: {metaOutputFile}, isClient: {isClient}");
             if (string.IsNullOrEmpty(metaOutputFile))
             {
                 LogMessageHandler.AddWarn($"[GenerateProtoMeta] 不存在 proto meta 的输出路径，将不会执行输出操作");
@@ -162,7 +169,9 @@ import ""{SpecialExcelCfg.EnumProtoMetaFileName}{GeneralCfg.ProtoMetaFileSuffix}
                 {
                     if ((platform & fieldInfo.Platform) == 0) continue;
 
-                    metaWriter.AppendLine($"\t{ExcelUtil.ToProtoType(fieldInfo.Type)} {fieldInfo.Name} = {++messageFieldIdx}; //{fieldInfo.Comment}");
+                    metaWriter.Append($"\t{ExcelUtil.ToProtoType(fieldInfo.Type)} {fieldInfo.Name} = {++messageFieldIdx};");
+                    if (string.IsNullOrEmpty(fieldInfo.Comment)) metaWriter.AppendLine();
+                    else metaWriter.AppendLine($"//{fieldInfo.Comment}");
                 }
                 metaWriter.AppendLine("}").AppendLine();
             }
@@ -172,7 +181,8 @@ import ""{SpecialExcelCfg.EnumProtoMetaFileName}{GeneralCfg.ProtoMetaFileSuffix}
             metaWriter.Clear();
 
             string metaFileName = Path.GetFileName(metaOutputFile);
-            string listFilePath = Path.Combine(dirPath, $"{CommonExcelCfg.ProtoMetaListFileName}{GeneralCfg.ProtoMetaFileSuffix}");
+            string metaName = metaFileName.Replace(GeneralCfg.ProtoMetaFileSuffix, string.Empty);
+            string listFilePath = Path.Combine(dirPath, $"{metaName}{CommonExcelCfg.ProtoMetaListMessageNameSuffix}{GeneralCfg.ProtoMetaFileSuffix}");
             using StreamWriter listSW = new(listFilePath);
             StringBuilder listWriter = new();
 
@@ -196,6 +206,8 @@ import ""{metaFileName}"";").AppendLine();
 
         public virtual void GenerateProtoScript(string metaInputFile, string protoScriptOutputDir, ScriptTypeEn scriptType)
         {
+            LogMessageHandler.AddInfo($"[CommonExcelHandler][GenerateProtoScript]: output: {protoScriptOutputDir}, scriptType: {scriptType}");
+
             if (!File.Exists(metaInputFile)) throw new Exception($"[GenerateProtoScript] proto meta 文件路径不存在：{metaInputFile}");
             if (string.IsNullOrEmpty(protoScriptOutputDir))
             {
@@ -203,11 +215,15 @@ import ""{metaFileName}"";").AppendLine();
                 return;
             }
 
-            string dirPath = Path.GetDirectoryName(metaInputFile);
-            string listFilePath = Path.Combine(dirPath, $"{CommonExcelCfg.ProtoMetaListFileName}{GeneralCfg.ProtoMetaFileSuffix}");
-
             IScriptExcelHandler scriptHandler = ExcelUtil.GetScriptExcelHandler(scriptType);
             scriptHandler.GenerateProtoScript(metaInputFile, protoScriptOutputDir);
+
+            string dirPath = Path.GetDirectoryName(metaInputFile);
+            string metaFileName = Path.GetFileName(metaInputFile);
+            string metaName = metaFileName.Replace(GeneralCfg.ProtoMetaFileSuffix, string.Empty);
+            string listFilePath = Path.Combine(dirPath, $"{metaName}{CommonExcelCfg.ProtoMetaListMessageNameSuffix}{GeneralCfg.ProtoMetaFileSuffix}");
+            if (!Path.Exists(listFilePath)) return;
+
             scriptHandler.GenerateProtoScript(listFilePath, protoScriptOutputDir);
         }
 
@@ -229,29 +245,29 @@ import ""{metaFileName}"";").AppendLine();
             foreach (IXLWorksheet sheet in wb.Worksheets)
             {
                 string messageName = sheetCount == 1 ? $"{excelFileName}" : $"{excelFileName}_{sheet.Name}";
-                int columnCount = sheet.ColumnCount();
                 if (!HeadInfoDic.TryGetValue(messageName, out ExcelHeadInfo headInfo)) throw new Exception($"[GenerateProtoData] 表: {messageName} 没有 headInfo");
 
                 foreach (IXLRow row in sheet.RowsUsed())
                 {
-                    int columnIdx = 1;
-                    string typeName = row.Cell(columnIdx).GetString();
+                    string typeName = row.Cell(1).GetString();
                     bool isTpyeRow = typeName.StartsWith('#');
                     if (isTpyeRow) continue;
 
-                    foreach (IXLCell cell in row.CellsUsed())
+                    foreach (IXLCell cell in row.Cells(false))
                     {
-                        columnIdx = cell.Address.ColumnNumber;
+                        int columnIdx = cell.Address.ColumnNumber;
+                        if (columnIdx == 1) continue;
                         if (ExcelUtil.IsRearMergedCell(cell)) continue;
 
                         int fieldIdx = headInfo.GetFieldIdx(columnIdx);
-                        if (fieldIdx == -1) throw new Exception($"[GenerateProtoData] 表：{messageName} 存在字段没有和类型关联上. Address: {cell.Address}");
+                        if (fieldIdx == -1) continue;
 
                         ExcelFieldInfo fieldInfo = headInfo.Fields[fieldIdx];
                         if ((platform & fieldInfo.Platform) == 0) continue;
 
                         string columnContent = cell.GetString().Trim();
 
+                        //LogMessageHandler.AddWarn($"[test]. messageName: {messageName}; Address: {cell.Address}; type: {fieldInfo.Type}; columnContent: {columnContent}; platform: {platform}; fieldPlatform: {fieldInfo.Platform}; isClient: {isClient}");
                         if (ExcelUtil.IsTypeLocalizationTxt(fieldInfo.Type)
                             || ExcelUtil.IsTypeLocalizationImg(fieldInfo.Type)
                             || ExcelUtil.IsBaseType(fieldInfo.Type))

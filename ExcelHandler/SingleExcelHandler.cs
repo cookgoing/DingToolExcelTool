@@ -1,18 +1,17 @@
 ﻿namespace DingToolExcelTool.ExcelHandler
 {
+    using System.Collections.Concurrent;
     using System.IO;
-    using System.Reflection.Metadata;
     using System.Text;
     using ClosedXML.Excel;
     using DingToolExcelTool.Configure;
     using DingToolExcelTool.Data;
     using DingToolExcelTool.ScriptHandler;
     using DingToolExcelTool.Utils;
-    using Microsoft.CodeAnalysis;
 
     internal class SingleExcelHandler : IExcelHandler
     {
-        public Dictionary<string, SingleExcelHeadInfo> HeadInfoDic { get; private set; }
+        public ConcurrentDictionary<string, SingleExcelHeadInfo> HeadInfoDic { get; private set; }
 
         public void Init() => HeadInfoDic = new();
         public void Clear() => HeadInfoDic?.Clear();
@@ -29,28 +28,31 @@
 
             foreach (IXLWorksheet sheet in wb.Worksheets)
             {
-                int rowCount = sheet.RowCount();
                 SingleExcelHeadInfo headInfo = new();
                 HashSet<string> nameSet = new();
                 headInfo.ScriptName = sheetCount == 1 ?  $"{excelName}" : $"{excelName}_{sheet.Name}";
-                headInfo.Fields = new(rowCount - 1);
+                headInfo.Fields = new(10);
 
                 if (HeadInfoDic.ContainsKey(headInfo.ScriptName)) throw new Exception($"[GenerateExcelHeadInfo] 表：{headInfo.ScriptName} 存在同名的表格");
 
                 bool firstColumn = true;
                 foreach (IXLColumn column in sheet.ColumnsUsed())
                 {
-                    int rowIdx = 1;
-                    StringBuilder typeName = new(column.Cell(rowIdx).GetString());
+                    StringBuilder typeName = new(column.Cell(1).GetString());
                     bool isTpyeRow = typeName.Length > 0 && typeName[0].Equals('#');
-                    typeName.Remove(0, 1);
-                    if (isTpyeRow) ParseExcelHead(column, headInfo, nameSet, typeName.ToString(), rowCount, firstColumn);
-                    else ParseExcelValue(column, headInfo, rowCount);
+
+                    if (isTpyeRow) 
+                    {
+                        typeName.Remove(0, 1);
+                        ParseExcelHead(column, headInfo, nameSet, typeName.ToString(), firstColumn);
+                    }
+                    else ParseExcelValue(column, headInfo);
                     firstColumn = false;
                 }
 
+                headInfo.Trim();
                 headInfo.Sort();
-                HeadInfoDic.Add(headInfo.ScriptName, headInfo);
+                HeadInfoDic.TryAdd(headInfo.ScriptName, headInfo);
             }
         }
 
@@ -76,16 +78,17 @@
         }
 
 
-        private void ParseExcelHead(IXLColumn column, SingleExcelHeadInfo headInfo, HashSet<string> nameSet,  string typeName, int rowCount, bool firstColumn)
+        private void ParseExcelHead(IXLColumn column, SingleExcelHeadInfo headInfo, HashSet<string> nameSet,  string typeName, bool firstColumn)
         {
             if (!Enum.TryParse(typeName.ToString().ToLower(), out HeadType headType)) throw new Exception($"[ParseExceHead] 表：{headInfo.ScriptName} 存在未知的表头字段：{typeName}");
 
             int fieldIdx = 0;
-            foreach(IXLCell cell in column.CellsUsed())
+            foreach(IXLCell cell in column.Cells(false))
             {
+                int rowIdx = cell.Address.RowNumber;
+                if (rowIdx == 1) continue;
                 if (ExcelUtil.IsRearMergedCell(cell)) continue;
 
-                int rowIdx = cell.Address.RowNumber;
                 SingleExcelFieldInfo fieldInfo;
                 var (startRowIdx, endRowIdx) = ExcelUtil.GetCellRowRange(cell);
                 if (firstColumn)
@@ -99,7 +102,7 @@
                 else
                 {
                     bool idxOutofBound = fieldIdx >= headInfo.Fields.Count;
-                    if (idxOutofBound) throw new Exception($"[ParseExceHead] 表：{headInfo.ScriptName}。表头信息没有对齐");
+                    if (idxOutofBound) continue;//throw new Exception($"[ParseExceHead] 表：{headInfo.ScriptName}。表头信息没有对齐");
 
                     fieldInfo = headInfo.Fields[fieldIdx];
                     if (fieldInfo.StartRowIdx != startRowIdx || fieldInfo.EndRowIdx != endRowIdx) throw new Exception($"[ParseExceHead] 表：{headInfo.ScriptName}。表头信息没有对齐");
@@ -143,6 +146,12 @@
                             "cs" => PlatformType.All,
                             _ => PlatformType.Empty,
                         };
+
+                        if (fieldInfo.Platform == PlatformType.Empty)
+                        {
+                            LogMessageHandler.AddWarn($"[GenerateExcelHeadInfo] 表：{headInfo.ScriptName} Platform 不是合法的字符串，将不会导出。 Address: {cell.Address}");
+                            continue;
+                        }
                         break;
                     case HeadType.comment:
                         fieldInfo.Comment = rowContent;
@@ -151,13 +160,14 @@
             }
         }
 
-        private void ParseExcelValue(IXLColumn column, SingleExcelHeadInfo headInfo, int rowCount)
+        private void ParseExcelValue(IXLColumn column, SingleExcelHeadInfo headInfo)
         {
-            foreach (IXLCell cell in column.CellsUsed())
+            foreach (IXLCell cell in column.Cells(false))
             {
+                int rowIdx = cell.Address.RowNumber;
+                if (rowIdx == 1) continue;
                 if (ExcelUtil.IsRearMergedCell(cell)) continue;
 
-                int rowIdx = cell.Address.RowNumber;
                 int fieldIdx = headInfo.GetFieldIdx(rowIdx);
                 if (fieldIdx == -1) throw new Exception($"[GenerateProtoData] 表：{headInfo.ScriptName} 存在字段没有和类型关联上. Address: {cell.Address}");
                 if (!string.IsNullOrEmpty(headInfo.Fields[fieldIdx].Value)) throw new Exception($"[GenerateProtoData] 表：{headInfo.ScriptName} 是一个单例表，只能有一列的数据");

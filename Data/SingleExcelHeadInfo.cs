@@ -18,6 +18,18 @@
         public string ScriptName;
         public List<SingleExcelFieldInfo> Fields;
 
+        public void Trim()
+        {
+            for (int i = Fields.Count - 1; i >= 0; --i)
+            {
+                SingleExcelFieldInfo field = Fields[i];
+                if (!string.IsNullOrEmpty(field.Name)
+                    && !string.IsNullOrEmpty(field.Type)) continue;
+
+                Fields.RemoveAt(i);
+            }
+        }
+
         public void Sort() => Fields.Sort((a, b) => a.StartRowIdx - b.StartRowIdx);
 
         public int GetFieldIdx(int columnIdx)
@@ -26,7 +38,7 @@
             {
                 SingleExcelFieldInfo field = Fields[i];
                 if (columnIdx < field.StartRowIdx) return -1;
-                if (columnIdx < field.EndRowIdx) return i;
+                if (columnIdx <= field.EndRowIdx) return i;
             }
 
             return -1;

@@ -4,11 +4,11 @@
     using System.Text;
     using DingToolExcelTool.Data;
     using DingToolExcelTool.Configure;
-    using System.Reflection;
+    using System.Collections.Concurrent;
 
     internal class CSharpSpecialExcelHandler : Singleton<CSharpSpecialExcelHandler>, IScriptSpecialExcelHandler
     {
-        public void GenerateErrorCodeScript(Dictionary<string, ErrorCodeScriptInfo> errorCodeHeadDic, string frameOutputFile, string businessOutputFile)
+        public void GenerateErrorCodeScript(ConcurrentDictionary<string, ErrorCodeScriptInfo> errorCodeHeadDic, string frameOutputFile, string businessOutputFile)
         {
             if (string.IsNullOrEmpty(frameOutputFile) || string.IsNullOrEmpty(businessOutputFile)) throw new Exception("[GenerateErrorCodeScript]. ErrorCode 需要有两个输出路径");
             if (errorCodeHeadDic == null) throw new Exception("[GenerateErrorCodeScript]. Errorcode 表，没有头部信息");
@@ -25,8 +25,8 @@
                 bool isFrame = errorCodeInfo.SheetName == SpecialExcelCfg.ErrorCodeFrameSheetName;
                 foreach (ErrorCodeScriptFieldInfo fieldInfo in errorCodeInfo.Fields)
                 {
-                    if (isFrame) frameFieldSB.AppendLine($"\t\tpublic const int {fieldInfo.CodeStr} = {fieldInfo.Code};//{fieldInfo.Comment}");
-                    else businessFieldSB.AppendLine($"\t\tpublic const int {fieldInfo.CodeStr} = {fieldInfo.Code};//{fieldInfo.Comment}");
+                    if (isFrame) frameFieldSB.Append($"\t\tpublic const int {fieldInfo.CodeStr} = {fieldInfo.Code};").AppendLine(string.IsNullOrEmpty(fieldInfo.Comment) ? null : "//" + fieldInfo.Comment);
+                    else businessFieldSB.Append($"\t\tpublic const int {fieldInfo.CodeStr} = {fieldInfo.Code};").AppendLine(string.IsNullOrEmpty(fieldInfo.Comment) ? null : "//" + fieldInfo.Comment);
                 }
             }
 
@@ -34,7 +34,7 @@
             WriteErrorCodeScript(businessOutputFile, businessFieldSB.ToString(), SpecialExcelCfg.ErrorCodeBusinessPackageName);
         }
 
-        public void GenerateSingleScript(Dictionary<string, SingleExcelHeadInfo> singleHeadDic, string outputDir, bool isClient)
+        public void GenerateSingleScript(ConcurrentDictionary<string, SingleExcelHeadInfo> singleHeadDic, string outputDir, bool isClient)
         {
             if (string.IsNullOrEmpty(outputDir)) throw new Exception("[GenerateSingleScript]. 没有输出路径");
 
@@ -48,10 +48,13 @@
                 {
                     if ((platform & fieldInfo.Platform) == 0) continue;
 
-                    fieldSB.AppendLine($"\t\tpublic readonly static {CSharpExcelHandler.Instance.ExcelType2ScriptTypeStr(fieldInfo.Type)} {fieldInfo.Name} = {fieldInfo.Value};//{fieldInfo.Comment}");
+                    string filedValue = CSharpExcelHandler.Instance.ExcelType2ScriptType(fieldInfo.Type, fieldInfo.Value).ToString();
+                    if (fieldInfo.Type == "string") filedValue = $"\"{filedValue}\"";
+                    else if (fieldInfo.Type == "bool") filedValue = filedValue?.ToLower();
+                    fieldSB.Append($"\t\tpublic readonly static {CSharpExcelHandler.Instance.ExcelType2ScriptTypeStr(fieldInfo.Type)} {fieldInfo.Name} = {filedValue};").AppendLine(string.IsNullOrEmpty(fieldInfo.Comment) ? null : "//" + fieldInfo.Comment) ;
                 }
 
-                string filePath = Path.Combine(outputDir, singleHeadInfo.ScriptName, $"{GeneralCfg.ExcelScriptFileSuffix(ScriptTypeEn.CSharp)}");
+                string filePath = Path.Combine(outputDir, $"{singleHeadInfo.ScriptName}{GeneralCfg.ExcelScriptFileSuffix(ScriptTypeEn.CSharp)}");
                 WriteSingleExcelScript(singleHeadInfo.ScriptName, filePath, fieldSB.ToString());
             }
         }
@@ -62,15 +65,12 @@
             StringBuilder scriptSB = new();
 
             scriptSB.AppendLine(@$"
-using System.IO
-using System.Collections.Generic;
-using Google.Protobuf;
-using DingFrame.Module.AssetLoader;
-
-namespace {packageName};
-public sealed partial class {SpecialExcelCfg.ErrorCodeScriptName}
+namespace {packageName}
 {{
-    {fieldStr}
+    public sealed partial class {SpecialExcelCfg.ErrorCodeScriptName}
+    {{
+{fieldStr}
+    }}
 }}
 ");
 
@@ -84,15 +84,14 @@ public sealed partial class {SpecialExcelCfg.ErrorCodeScriptName}
             StringBuilder scriptSB = new();
 
             scriptSB.AppendLine(@$"
-using System.IO
 using System.Collections.Generic;
-using Google.Protobuf;
-using DingFrame.Module.AssetLoader;
 
-namespace {GeneralCfg.ProtoMetaPackageName};
-public static class {scriptName}
+namespace {GeneralCfg.ProtoMetaPackageName}
 {{
-    {fieldStr}
+    public static class {scriptName}
+    {{
+{fieldStr}
+    }}
 }}
 ");
 

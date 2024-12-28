@@ -1,11 +1,12 @@
 ﻿namespace DingToolExcelTool.ScriptHandler
 {
     using DingToolExcelTool.Data;
+    using System.Collections.Concurrent;
 
     internal interface IScriptSpecialExcelHandler
     {
-        void GenerateErrorCodeScript(Dictionary<string, ErrorCodeScriptInfo> errorCodeHeadDic, string frameOutputFile, string businessOutputFile);
+        void GenerateErrorCodeScript(ConcurrentDictionary<string, ErrorCodeScriptInfo> errorCodeHeadDic, string frameOutputFile, string businessOutputFile);
 
-        void GenerateSingleScript(Dictionary<string, SingleExcelHeadInfo> singleHeadDic, string outputDir, bool isClient);
+        void GenerateSingleScript(ConcurrentDictionary<string, SingleExcelHeadInfo> singleHeadDic, string outputDir, bool isClient);
     }
 }

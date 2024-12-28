@@ -35,5 +35,16 @@
                 Window.MoveLogListScroll();
             });
         }
+
+        public static void LogException(Exception ex)
+        {
+            AddError($"{ex.Message}\n{ex.StackTrace}");
+
+            if (ex.InnerException != null)
+            {
+                AddError("Inner Exception:");
+                LogException(ex.InnerException);
+            }
+        }
     }
 }

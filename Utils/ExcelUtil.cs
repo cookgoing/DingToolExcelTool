@@ -38,7 +38,7 @@
             if (!typeStr.EndsWith("[]")) return false;
 
             string elementType = typeStr.Substring(0, typeStr.Length - 2);
-            return IsBaseType(elementType) || IsEnumType(typeStr);
+            return IsBaseType(elementType) || IsEnumType(elementType);
         }
         public static bool IsMapType(string typeStr)
         {
@@ -60,7 +60,7 @@
             if (IsArrType(typeStr))
             {
                 string elementType = typeStr.Substring(0, typeStr.Length - 2);
-                if (GeneralCfg.BaseType2ProtoMap.TryGetValue(typeStr, out string protoType)) return $"repeated {protoType}";
+                if (GeneralCfg.BaseType2ProtoMap.TryGetValue(elementType, out string protoType)) return $"repeated {protoType}";
                 else return $"repeated {elementType}";
             }
             if (IsMapType(typeStr))
@@ -133,7 +133,7 @@
 
         public static void ExcuteProgramFile(string batchFilePath, string arguments)
         {
-            if (!File.Exists(batchFilePath)) throw new FileNotFoundException("[ExcuteBatchFile] 没有这个应用程序", batchFilePath);
+            if (!File.Exists(batchFilePath)) throw new FileNotFoundException($"[ExcuteBatchFile] 没有这个应用程序: {batchFilePath}", batchFilePath);
 
             ProcessStartInfo startInfo = new()
             {
