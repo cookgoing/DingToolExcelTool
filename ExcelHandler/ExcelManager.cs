@@ -18,7 +18,6 @@
 
         private CancellationTokenSource cts;
         private ParallelOptions options;
-        private bool clientDynamicCompile, serverDynamicCompile;
 
         public ExcelManager()
         {
@@ -34,8 +33,7 @@
                 //MaxDegreeOfParallelism = Environment.ProcessorCount,
                 CancellationToken = cts.Token
             };
-            clientDynamicCompile = serverDynamicCompile = false;
-
+            
             CommonExcelHandler.Init();
             EnumExcelHandler.Init();
             ErrorCodeExcelHandler.Init();
@@ -44,7 +42,6 @@
 
         public void Clear()
         {
-            clientDynamicCompile = serverDynamicCompile = false;
             cts.Dispose();
             WriteCustomData();
             
@@ -56,7 +53,6 @@
 
         public void Reset()
         {
-            clientDynamicCompile = serverDynamicCompile = false;
             cts = new CancellationTokenSource();
             options.CancellationToken = cts.Token;
             
@@ -194,69 +190,79 @@
             bool turnonClient = Data.OutputClient;
             bool turnonServer = Data.OutputServer;
 
-            Parallel.ForEach(excelPathArr, options, async excelFilePath =>
+            if (turnonClient)
             {
-                try
+                string clientProtoDataOutputDir = Data.ClientOutputInfo.ProtoDataOutputDir;
+                ScriptTypeEn clientScriptType = Data.ClientOutputInfo.ScriptType;
+
+                LogMessageHandler.AddWarn($"【客户端代码动态编译】");
+                string clientProtoScriptOutputDir = Data.ClientOutputInfo.ProtoScriptOutputDir;
+                IScriptExcelHandler scriptHandler = ExcelUtil.GetScriptExcelHandler(clientScriptType);
+                string[] scriptPathArr = Directory.GetFiles(clientProtoScriptOutputDir, $"*{scriptHandler.Suffix}", SearchOption.AllDirectories);
+                string[] scriptContent = new string[scriptPathArr.Length];
+                for (int i = 0; i < scriptPathArr.Length; ++i)
                 {
-                    LogMessageHandler.AddInfo($"【生成proto数据】:{excelFilePath}");
-                    string excelFileName = Path.GetFileNameWithoutExtension(excelFilePath);
-                    
-                    if (turnonClient)
+                    scriptContent[i] = File.ReadAllText(scriptPathArr[i]);
+                }
+                scriptHandler.DynamicCompile(scriptContent);
+
+                Parallel.ForEach(excelPathArr, options, async excelFilePath =>
+                {
+                    try
                     {
-                        string clientProtoDataOutputDir = Data.ClientOutputInfo.ProtoDataOutputDir;
-                        ScriptTypeEn clientScriptType = Data.ClientOutputInfo.ScriptType;
-
-                        if (!clientDynamicCompile)
-                        {
-                            string clientProtoScriptOutputDir = Data.ClientOutputInfo.ProtoScriptOutputDir;
-                            IScriptExcelHandler scriptHandler = ExcelUtil.GetScriptExcelHandler(clientScriptType);
-                            string[] scriptPathArr = Directory.GetFiles(clientProtoScriptOutputDir, $"*{scriptHandler.Suffix}", SearchOption.AllDirectories);
-                            string[] scriptContent = new string[scriptPathArr.Length];
-                            for (int i = 0; i < scriptPathArr.Length; ++i)
-                            {
-                                scriptContent[i] = File.ReadAllText(scriptPathArr[i]);
-                            }
-                            scriptHandler.DynamicCompile(scriptContent);
-                            clientDynamicCompile = true;
-                        }
-
+                        LogMessageHandler.AddInfo($"【客户端生成proto数据】:{excelFilePath}");
+                        string excelFileName = Path.GetFileNameWithoutExtension(excelFilePath);
                         if (excelFileName == SpecialExcelCfg.EnumExcelName) EnumExcelHandler.GenerateProtoData(excelFilePath, clientProtoDataOutputDir, true, clientScriptType);
                         else if (excelFileName == SpecialExcelCfg.ErrorCodeExcelName) ErrorCodeExcelHandler.GenerateProtoData(excelFilePath, clientProtoDataOutputDir, true, clientScriptType);
                         else if (excelFileName.StartsWith(SpecialExcelCfg.SingleExcelPrefix)) SingleExcelHandler.GenerateProtoData(excelFilePath, clientProtoDataOutputDir, true, clientScriptType);
                         else CommonExcelHandler.GenerateProtoData(excelFilePath, clientProtoDataOutputDir, true, clientScriptType);
                     }
-                    if (turnonServer)
+                    catch (Exception e)
                     {
-                        string serverProtoDataOutputDir = Data.ServerOutputInfo.ProtoDataOutputDir;
-                        ScriptTypeEn serverScriptType = Data.ServerOutputInfo.ScriptType;
+                        result = false;
+                        LogMessageHandler.LogException(e);
+                        cts.Cancel();
+                    }
+                });
+            }
 
-                        if (!serverDynamicCompile)
-                        {
-                            string serverProtoScriptOutputFile = Data.ServerOutputInfo.ProtoScriptOutputDir;
-                            IScriptExcelHandler scriptHandler = ExcelUtil.GetScriptExcelHandler(serverScriptType);
-                            string[] scriptPathArr = Directory.GetFiles(serverProtoScriptOutputFile, $"*{scriptHandler.Suffix}", SearchOption.AllDirectories);
-                            string[] scriptContent = new string[scriptPathArr.Length];
-                            for (int i = 0; i < scriptPathArr.Length; ++i)
-                            {
-                                scriptContent[i] = File.ReadAllText(scriptPathArr[i]);
-                            }
-                            scriptHandler.DynamicCompile(scriptContent);
-                            serverDynamicCompile = true;
-                        }
+            if (!result) return false;
 
+            if (turnonServer)
+            {
+                string serverProtoDataOutputDir = Data.ServerOutputInfo.ProtoDataOutputDir;
+                ScriptTypeEn serverScriptType = Data.ServerOutputInfo.ScriptType;
+
+                LogMessageHandler.AddWarn($"【服务器代码动态编译】");
+                string serverProtoScriptOutputFile = Data.ServerOutputInfo.ProtoScriptOutputDir;
+                IScriptExcelHandler scriptHandler = ExcelUtil.GetScriptExcelHandler(serverScriptType);
+                string[] scriptPathArr = Directory.GetFiles(serverProtoScriptOutputFile, $"*{scriptHandler.Suffix}", SearchOption.AllDirectories);
+                string[] scriptContent = new string[scriptPathArr.Length];
+                for (int i = 0; i < scriptPathArr.Length; ++i)
+                {
+                    scriptContent[i] = File.ReadAllText(scriptPathArr[i]);
+                }
+                scriptHandler.DynamicCompile(scriptContent);
+
+                Parallel.ForEach(excelPathArr, options, async excelFilePath =>
+                {
+                    try
+                    {
+                        LogMessageHandler.AddInfo($"【服务器生成proto数据】:{excelFilePath}");
+                        string excelFileName = Path.GetFileNameWithoutExtension(excelFilePath);
                         if (excelFileName == SpecialExcelCfg.EnumExcelName) EnumExcelHandler.GenerateProtoData(excelFilePath, serverProtoDataOutputDir, false, serverScriptType);
                         else if (excelFileName == SpecialExcelCfg.ErrorCodeExcelName) ErrorCodeExcelHandler.GenerateProtoData(excelFilePath, serverProtoDataOutputDir, false, serverScriptType);
                         else if (excelFileName.StartsWith(SpecialExcelCfg.SingleExcelPrefix)) SingleExcelHandler.GenerateProtoData(excelFilePath, serverProtoDataOutputDir, false, serverScriptType);
                         else CommonExcelHandler.GenerateProtoData(excelFilePath, serverProtoDataOutputDir, false, serverScriptType);
                     }
-                }
-                catch (Exception e)
-                {
-                    result = false;
-                    LogMessageHandler.LogException(e);
-                    cts.Cancel();
-                }
-            });
+                    catch (Exception e)
+                    {
+                        result = false;
+                        LogMessageHandler.LogException(e);
+                        cts.Cancel();
+                    }
+                });
+            }
 
             return result;
         }
