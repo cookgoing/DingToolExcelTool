@@ -6,7 +6,6 @@
     using DingToolExcelTool.Configure;
     using DingToolExcelTool.Utils;
     using DingToolExcelTool.ScriptHandler;
-    using System.Runtime.InteropServices;
 
     internal class ExcelManager : Singleton<ExcelManager>
     {

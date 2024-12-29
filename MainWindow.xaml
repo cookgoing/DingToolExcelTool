@@ -187,7 +187,7 @@
 			导出的文件夹内，不要存在其他无关的文件
 	        <LineBreak/>
 	        更多详情：
-	        <Hyperlink NavigateUri="https://github.com" RequestNavigate="Hyperlink_moreDetail">
+	        <Hyperlink NavigateUri="https://github.com/cookgoing/DingToolExcelTool" RequestNavigate="Hyperlink_moreDetail">
 		        github地址
 	        </Hyperlink>
         </TextBlock>

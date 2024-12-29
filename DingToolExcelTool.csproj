@@ -22,7 +22,7 @@
 
   <ItemGroup>
     <Resource Include="images\teamLogo.png">
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Resource>
   </ItemGroup>
 
