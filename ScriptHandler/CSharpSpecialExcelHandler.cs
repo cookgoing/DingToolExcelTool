@@ -8,7 +8,7 @@
 
     internal class CSharpSpecialExcelHandler : Singleton<CSharpSpecialExcelHandler>, IScriptSpecialExcelHandler
     {
-        public void GenerateErrorCodeScript(ConcurrentDictionary<string, ErrorCodeScriptInfo> errorCodeHeadDic, string frameOutputFile, string businessOutputFile)
+        public async Task GenerateErrorCodeScript(ConcurrentDictionary<string, ErrorCodeScriptInfo> errorCodeHeadDic, string frameOutputFile, string businessOutputFile)
         {
             if (string.IsNullOrEmpty(frameOutputFile) || string.IsNullOrEmpty(businessOutputFile)) throw new Exception("[GenerateErrorCodeScript]. ErrorCode 需要有两个输出路径");
             if (errorCodeHeadDic == null) throw new Exception("[GenerateErrorCodeScript]. Errorcode 表，没有头部信息");
@@ -30,11 +30,11 @@
                 }
             }
 
-            WriteErrorCodeScript(frameOutputFile, frameFieldSB.ToString(), SpecialExcelCfg.ErrorCodeFramePackageName);
-            WriteErrorCodeScript(businessOutputFile, businessFieldSB.ToString(), SpecialExcelCfg.ErrorCodeBusinessPackageName);
+            await WriteErrorCodeScript(frameOutputFile, frameFieldSB.ToString(), SpecialExcelCfg.ErrorCodeFramePackageName);
+            await WriteErrorCodeScript(businessOutputFile, businessFieldSB.ToString(), SpecialExcelCfg.ErrorCodeBusinessPackageName);
         }
 
-        public void GenerateSingleScript(ConcurrentDictionary<string, SingleExcelHeadInfo> singleHeadDic, string outputDir, bool isClient)
+        public async Task GenerateSingleScript(ConcurrentDictionary<string, SingleExcelHeadInfo> singleHeadDic, string outputDir, bool isClient)
         {
             if (string.IsNullOrEmpty(outputDir)) throw new Exception("[GenerateSingleScript]. 没有输出路径");
 
@@ -55,11 +55,11 @@
                 }
 
                 string filePath = Path.Combine(outputDir, $"{singleHeadInfo.ScriptName}{GeneralCfg.ExcelScriptFileSuffix(ScriptTypeEn.CSharp)}");
-                WriteSingleExcelScript(singleHeadInfo.ScriptName, filePath, fieldSB.ToString());
+                await WriteSingleExcelScript(singleHeadInfo.ScriptName, filePath, fieldSB.ToString());
             }
         }
 
-        private void WriteErrorCodeScript(string outputPath, string fieldStr, string packageName)
+        private async Task WriteErrorCodeScript(string outputPath, string fieldStr, string packageName)
         {
             using StreamWriter sw = new StreamWriter(outputPath);
             StringBuilder scriptSB = new();
@@ -74,11 +74,11 @@ namespace {packageName}
 }}
 ");
 
-            sw.Write(scriptSB.ToString());
+            await sw.WriteAsync(scriptSB.ToString());
             sw.Flush();
         }
 
-        private void WriteSingleExcelScript(string scriptName, string outputPath, string fieldStr)
+        private async Task WriteSingleExcelScript(string scriptName, string outputPath, string fieldStr)
         {
             using StreamWriter sw = new StreamWriter(outputPath);
             StringBuilder scriptSB = new();
@@ -95,7 +95,7 @@ namespace {GeneralCfg.ProtoMetaPackageName}
 }}
 ");
 
-            sw.Write(scriptSB.ToString());
+            await sw.WriteAsync(scriptSB.ToString());
             sw.Flush();
         }
     }

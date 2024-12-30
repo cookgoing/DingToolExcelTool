@@ -197,5 +197,7 @@
                 throw new Exception($"清空文件夹时发生错误: {ex.Message}");
             }
         }
+
+        public static string ParsePath(string path) => path.Replace("%BaseDir%", AppDomain.CurrentDomain.BaseDirectory);
     }
 }

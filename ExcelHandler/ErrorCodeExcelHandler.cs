@@ -25,12 +25,12 @@
             ErrorCodeDic?.Clear();
         } 
 
-        public override void GenerateExcelHeadInfo(string excelInputFile)
+        public override async Task GenerateExcelHeadInfo(string excelInputFile)
         {
             if (ErrorCodeDic == null) throw new Exception("[GenerateExcelHeadInfo] ErrorCodeDic == null");
             if (!File.Exists(excelInputFile)) throw new Exception($"[GenerateExcelHeadInfo] 表路径不存在：{excelInputFile}");
 
-            base.GenerateExcelHeadInfo(excelInputFile);
+            await base.GenerateExcelHeadInfo(excelInputFile);
 
             string excelFileName = Path.GetFileNameWithoutExtension(excelInputFile);
             using XLWorkbook wb = new (excelInputFile);
@@ -107,9 +107,9 @@
             }
         }
 
-        public override void GenerateExcelScript(string excelInputFile, string excelScriptOutputDir, bool isClient, ScriptTypeEn scriptType) 
+        public override async Task GenerateExcelScript(string excelInputFile, string excelScriptOutputDir, bool isClient, ScriptTypeEn scriptType) 
         {
-            base.GenerateExcelScript(excelInputFile, excelScriptOutputDir, isClient, scriptType);
+            await base.GenerateExcelScript(excelInputFile, excelScriptOutputDir, isClient, scriptType);
 
             string frameOutputDir = isClient ? ExcelManager.Instance.Data.ClientOutputInfo.ErrorCodeFrameDir
                                                 : ExcelManager.Instance.Data.ServerOutputInfo.ErrorCodeFrameDir;
@@ -122,7 +122,7 @@
             IScriptSpecialExcelHandler scriptSpecialHandler = ExcelUtil.GetScriptSpecialExcelHandler(scriptType);
             string frameFilePath = Path.Combine(frameOutputDir, $"{SpecialExcelCfg.ErrorCodeFrameScriptFileName}{scriptExcelHandler.Suffix}");
             string businessFilePath = Path.Combine(businessOutputDir, $"{SpecialExcelCfg.ErrorCodeBusinessScriptFileName}{scriptExcelHandler.Suffix}");
-            scriptSpecialHandler.GenerateErrorCodeScript(ErrorCodeDic, frameFilePath, businessFilePath);
+            await scriptSpecialHandler.GenerateErrorCodeScript(ErrorCodeDic, frameFilePath, businessFilePath);
         }
     }
 }

@@ -5,6 +5,8 @@ VisualStudioVersion = 17.12.35527.113
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DingToolExcelTool", "DingToolExcelTool.csproj", "{804B8113-501D-4D69-BB16-834F3C44E44A}"
 EndProject
+Project("{54435603-DBB4-11D2-8724-00A0C9A8B90C}") = "DingExcelToolSetup", "..\DingExcelToolSetup\DingExcelToolSetup.vdproj", "{FBDD9B63-B6CD-4608-B431-6AE9EDEAEA78}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +17,8 @@ Global
 		{804B8113-501D-4D69-BB16-834F3C44E44A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{804B8113-501D-4D69-BB16-834F3C44E44A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{804B8113-501D-4D69-BB16-834F3C44E44A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FBDD9B63-B6CD-4608-B431-6AE9EDEAEA78}.Debug|Any CPU.ActiveCfg = Debug
+		{FBDD9B63-B6CD-4608-B431-6AE9EDEAEA78}.Release|Any CPU.ActiveCfg = Release
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

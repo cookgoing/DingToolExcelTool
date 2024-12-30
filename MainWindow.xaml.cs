@@ -95,20 +95,20 @@
             cb_clientScriptType.SelectedIndex = (int)ExcelManager.Instance.Data.ClientOutputInfo.ScriptType;
             cb_serverScriptType.SelectedIndex = (int)ExcelManager.Instance.Data.ServerOutputInfo.ScriptType;
 
-            tb_excelPath.Text = ExcelManager.Instance.Data.ExcelInputRootDir;
-            tb_clientPBMetaPath.Text = ExcelManager.Instance.Data.ClientOutputInfo.ProtoMetaOutputDir;
-            tb_clientPBScriptPath.Text = ExcelManager.Instance.Data.ClientOutputInfo.ProtoScriptOutputDir;
-            tb_clientPBDataPath.Text = ExcelManager.Instance.Data.ClientOutputInfo.ProtoDataOutputDir;
-            tb_clientExcelScriptPath.Text = ExcelManager.Instance.Data.ClientOutputInfo.ExcelScriptOutputDir;
-            tb_clientErrorcodeFramePath.Text = ExcelManager.Instance.Data.ClientOutputInfo.ErrorCodeFrameDir;
-            tb_clientErrorcodeBusinessPath.Text = ExcelManager.Instance.Data.ClientOutputInfo.ErrorCodeBusinessDir;
+            tb_excelPath.Text = ExcelManager.Instance.Data.Data.ExcelInputRootDir;
+            tb_clientPBMetaPath.Text = ExcelManager.Instance.Data.Data.ClientOutputInfo.ProtoMetaOutputDir;
+            tb_clientPBScriptPath.Text = ExcelManager.Instance.Data.Data.ClientOutputInfo.ProtoScriptOutputDir;
+            tb_clientPBDataPath.Text = ExcelManager.Instance.Data.Data.ClientOutputInfo.ProtoDataOutputDir;
+            tb_clientExcelScriptPath.Text = ExcelManager.Instance.Data.Data.ClientOutputInfo.ExcelScriptOutputDir;
+            tb_clientErrorcodeFramePath.Text = ExcelManager.Instance.Data.Data.ClientOutputInfo.ErrorCodeFrameDir;
+            tb_clientErrorcodeBusinessPath.Text = ExcelManager.Instance.Data.Data.ClientOutputInfo.ErrorCodeBusinessDir;
 
-            tb_serverPBMetaPath.Text = ExcelManager.Instance.Data.ServerOutputInfo.ProtoMetaOutputDir;
-            tb_serverPBScriptPath.Text = ExcelManager.Instance.Data.ServerOutputInfo.ProtoScriptOutputDir;
-            tb_serverPBDataPath.Text = ExcelManager.Instance.Data.ServerOutputInfo.ProtoDataOutputDir;
-            tb_serverExcelScriptPath.Text = ExcelManager.Instance.Data.ServerOutputInfo.ExcelScriptOutputDir;
-            tb_serverErrorcodeFramePath.Text = ExcelManager.Instance.Data.ServerOutputInfo.ErrorCodeFrameDir;
-            tb_serverErrorcodeBusinessPath.Text = ExcelManager.Instance.Data.ServerOutputInfo.ErrorCodeBusinessDir;
+            tb_serverPBMetaPath.Text = ExcelManager.Instance.Data.Data.ServerOutputInfo.ProtoMetaOutputDir;
+            tb_serverPBScriptPath.Text = ExcelManager.Instance.Data.Data.ServerOutputInfo.ProtoScriptOutputDir;
+            tb_serverPBDataPath.Text = ExcelManager.Instance.Data.Data.ServerOutputInfo.ProtoDataOutputDir;
+            tb_serverExcelScriptPath.Text = ExcelManager.Instance.Data.Data.ServerOutputInfo.ExcelScriptOutputDir;
+            tb_serverErrorcodeFramePath.Text = ExcelManager.Instance.Data.Data.ServerOutputInfo.ErrorCodeFrameDir;
+            tb_serverErrorcodeBusinessPath.Text = ExcelManager.Instance.Data.Data.ServerOutputInfo.ErrorCodeBusinessDir;
         }
 
         private void RefreshData()
@@ -171,7 +171,7 @@
         }
 
 
-        private bool ExportExcel()
+        private async Task<bool> ExportExcel()
         {
             if (!ExcelManager.Instance.Data.OutputClient && !ExcelManager.Instance.Data.OutputServer)
             {
@@ -179,18 +179,18 @@
                 return false;
             }
 
-            ClearOutputDir();
+            await ClearOutputDir();
 
-            bool result = ExcelManager.Instance.GenerateExcelHeadInfo();
-            if (result) result = ExcelManager.Instance.GenerateProtoMeta();
-            if (result) result = ExcelManager.Instance.GenerateProtoScript();
-            if (result) result = ExcelManager.Instance.GenerateProtoData();
-            if (result) result = ExcelManager.Instance.GenerateExcelScript();
+            bool result = await ExcelManager.Instance.GenerateExcelHeadInfo();
+            if (result) result = await ExcelManager.Instance.GenerateProtoMeta();
+            if (result) result = await ExcelManager.Instance.GenerateProtoScript();
+            if (result) result = await ExcelManager.Instance.GenerateProtoData();
+            if (result) result = await ExcelManager.Instance.GenerateExcelScript();
 
             return result;
         }
 
-        private void ClearOutputDir()
+        private async Task ClearOutputDir()
         {
             if (ExcelManager.Instance.Data.OutputClient)
             {
@@ -223,13 +223,17 @@
                 if (Path.Exists(fameFilePath)) File.Delete(fameFilePath);
                 if (Path.Exists(businessFilePath)) File.Delete(businessFilePath);
             }
+
+            await Task.CompletedTask;
         }
 
-        private void RestoreDefault()
+        private async Task RestoreDefault()
         {
             ExcelManager.Instance.ResetDefaultData();
 
             RefreshUI();
+
+            await Task.CompletedTask;
         }
 
 
@@ -280,7 +284,7 @@
         }
 
 
-        private void Btn_excute(object sender, RoutedEventArgs eventArg)
+        private async void Btn_excute(object sender, RoutedEventArgs eventArg)
         {
             try
             {
@@ -289,19 +293,21 @@
                     case ExcuteTypeEn.ExportExcel:
                         if (!string.IsNullOrEmpty(tb_preProcessPath.Text)) ExcelUtil.ExcuteProgramFile(tb_preProcessPath.Text, tb_preProcessArgs.Text);
 
-                        bool result = ExportExcel();
+                        Stopwatch stopwatch = Stopwatch.StartNew();
+                        bool result = await ExportExcel();
+                        stopwatch.Stop();
 
                         if (!string.IsNullOrEmpty(tb_aftProcessPath.Text)) ExcelUtil.ExcuteProgramFile(tb_preProcessPath.Text, tb_aftProcessArgs.Text);
 
-                        if (result) LogMessageHandler.AddInfo("导表 完成");
+                        if (result) LogMessageHandler.AddInfo($"导表 完成！花费时间：{stopwatch.ElapsedMilliseconds / 1000f}s");
                         else LogMessageHandler.AddError("导表 出现错误，请查看具体问题");
                         break;
                     case ExcuteTypeEn.ClearOutputDir:
-                        ClearOutputDir();
+                        await ClearOutputDir();
                         LogMessageHandler.AddInfo("清理缓存 完成");
                         break;
                     case ExcuteTypeEn.RestoreDefaults:
-                        RestoreDefault();
+                        await RestoreDefault();
                         LogMessageHandler.AddInfo("恢复默认值 完成");
                         break;
                 }
@@ -315,7 +321,5 @@
                 ExcelManager.Instance.Reset();
             }
         }
-
-        // todo: 文档
     }
 }

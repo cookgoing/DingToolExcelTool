@@ -16,7 +16,7 @@
         public void Init() => HeadInfoDic = new();
         public void Clear() => HeadInfoDic?.Clear();
 
-        public void GenerateExcelHeadInfo(string excelInputFile)
+        public async Task GenerateExcelHeadInfo(string excelInputFile)
         {
             if (HeadInfoDic == null) throw new Exception("[GenerateExcelHeadInfo] HeadInfoDic == null");
             if (!File.Exists(excelInputFile)) throw new Exception($"[GenerateExcelHeadInfo] 表路径不存在：{excelInputFile}");
@@ -54,13 +54,15 @@
                 headInfo.Sort();
                 HeadInfoDic.TryAdd(headInfo.ScriptName, headInfo);
             }
+
+            await Task.CompletedTask;
         }
 
-        public void GenerateProtoMeta(string metaOutputFile, bool isClient) { }
-        public void GenerateProtoScript(string metaInputFile, string protoScriptOutputDir, ScriptTypeEn scriptType) { }
-        public void GenerateProtoData(string excelInputFile, string protoDataOutputFile, bool isClient, ScriptTypeEn scriptType) { }
+        public async Task GenerateProtoMeta(string metaOutputFile, bool isClient) => await Task.CompletedTask;
+        public async Task GenerateProtoScript(string metaInputFile, string protoScriptOutputDir, ScriptTypeEn scriptType) => await Task.CompletedTask;
+        public async Task GenerateProtoData(string excelInputFile, string protoDataOutputFile, bool isClient, ScriptTypeEn scriptType) => await Task.CompletedTask;
 
-        public void GenerateExcelScript(string excelInputFile, string excelScriptOutputDir, bool isClient, ScriptTypeEn scriptType)
+        public async Task GenerateExcelScript(string excelInputFile, string excelScriptOutputDir, bool isClient, ScriptTypeEn scriptType)
         {
             if (!File.Exists(excelInputFile)) throw new Exception($"[GenerateExcelScript] 表路径不存在：{excelInputFile}");
             if (string.IsNullOrEmpty(excelScriptOutputDir))
@@ -74,7 +76,7 @@
             string excelRelativeDir = Path.GetDirectoryName(excelRelativePath);
             string scriptDir = Path.Combine(excelScriptOutputDir, excelRelativeDir);
 
-            scriptHandler.GenerateSingleScript(HeadInfoDic, scriptDir, isClient);
+            await scriptHandler.GenerateSingleScript(HeadInfoDic, scriptDir, isClient);
         }
 
 

@@ -56,7 +56,10 @@
 	4. 本地化类型：%string: 需要多语言处理的文本；%%string: 需要多语言处理的图片路径
 	5. 索引Id:  *"typeName": 独立key; **"typeName": 联合key
 
-	注意：1. 类型名字可以空，但是改字段将不会导出；2. 如果是其他的类型字段，会报错
+	注意：
+		1. 类型名字可以空，但是改字段将不会导出；
+		2. 如果是其他的类型字段，会报错
+		3. 如果是索引id, 那么就不能重复
 
 ### c.#platform
 	c: 客户端
@@ -100,10 +103,8 @@
 
 	ErrorCode表是按照名字确定的, 只能有一个
 
-# TODO
-	1. 这个工具在实现的时候，虽然用到了多线程；但是因为经验问题，没有使用异步，导致导表的时候卡顿一下，一次性出现所有log；后续有时间再完善
-
 # Q&A
-	1. 这个工具打不开呀
+	1. 这个工具为什么打不开呀？
 	可能是环境不对，这个工具目前只能运行在Windows上，并且需要有.net环境，下载一个.net9 sdk:
-	[.net9 sdk page](https://dotnet.microsoft.com/en-us/download/dotnet/9.0).
+
+[.net9 sdk page](https://dotnet.microsoft.com/en-us/download/dotnet/9.0).

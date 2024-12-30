@@ -8,7 +8,35 @@
     using DingToolExcelTool.Utils;
     using DingToolExcelTool.Configure;
     using DingToolExcelTool.ScriptHandler;
-    
+    using System.Diagnostics.CodeAnalysis;
+
+    internal class UnionKeyComparer : IEqualityComparer<List<string>>
+    {
+        public bool Equals(List<string>? x, List<string>? y)
+        {
+            if (x == null && y == null) return true;
+            if (x == null || y == null) return false;
+            if (x?.Count() != y?.Count()) return false;
+
+            int? count = x?.Count();
+            if (count == null || count == 0) return true;
+
+            for (int i = 0; i < count; ++i) if (x[i] != y[i]) return false;
+
+            return true;
+        }
+
+        public int GetHashCode([DisallowNull] List<string> obj)
+        {
+            if (obj == null) return 0;
+
+            var hashCode = new HashCode();
+            foreach (var item in obj) hashCode.Add(item);
+
+            return hashCode.ToHashCode();
+        }
+    }
+
     internal class CommonExcelHandler : IExcelHandler
     {
         public ConcurrentDictionary<string, ExcelHeadInfo> HeadInfoDic { get; private set; }
@@ -17,7 +45,7 @@
 
         public virtual void Clear() => HeadInfoDic?.Clear();
 
-        public virtual void GenerateExcelHeadInfo(string excelInputFile)
+        public virtual async Task GenerateExcelHeadInfo(string excelInputFile)
         {
             if (HeadInfoDic == null) throw new Exception("[GenerateExcelHeadInfo] HeadInfoDic == null");
             if (!File.Exists(excelInputFile)) throw new Exception($"[GenerateExcelHeadInfo] 表路径不存在：{excelInputFile}");
@@ -42,7 +70,7 @@
                 {
                     StringBuilder typeName = new(row.Cell(1).GetString());
                     if (typeName.Length == 0 || !typeName[0].Equals('#')) continue;
-                    
+
                     typeName.Remove(0, 1);
                     if (!Enum.TryParse(typeName.ToString().ToLower(), out HeadType headType)) throw new Exception($"[GenerateExcelHeadInfo] 表：{headInfo.MessageName} 存在未知的表头字段：{typeName}");
 
@@ -74,6 +102,7 @@
                         }
                         fieldIdx++;
 
+                        //LogMessageHandler.AddWarn($"[test][GenerateExcelHeadInfo]. messageName: {headInfo.MessageName}; Address: {cell.Address}; headType: {headType}; columnContent: {columnContent};");
                         switch (headType)
                         {
                             case HeadType.name:
@@ -137,9 +166,11 @@
                 headInfo.Sort();
                 HeadInfoDic.TryAdd(headInfo.MessageName, headInfo);
             }
+
+            await Task.CompletedTask;
         }
 
-        public virtual void GenerateProtoMeta(string metaOutputFile, bool isClient)
+        public virtual async Task GenerateProtoMeta(string metaOutputFile, bool isClient)
         {
             LogMessageHandler.AddInfo($"[CommonExcelHandler][GenerateProtoMeta]: {metaOutputFile}, isClient: {isClient}");
             if (string.IsNullOrEmpty(metaOutputFile))
@@ -176,7 +207,7 @@ import ""{SpecialExcelCfg.EnumProtoMetaFileName}{GeneralCfg.ProtoMetaFileSuffix}
                 metaWriter.AppendLine("}").AppendLine();
             }
 
-            metaSW.Write(metaWriter);
+            await metaSW.WriteAsync(metaWriter);
             metaSW.Close();
             metaWriter.Clear();
 
@@ -199,12 +230,12 @@ import ""{metaFileName}"";").AppendLine();
 }}").AppendLine();
             }
 
-            listSW.Write(listWriter);
+            await listSW.WriteAsync(listWriter);
             listSW.Close();
             listWriter.Clear();
         }
 
-        public virtual void GenerateProtoScript(string metaInputFile, string protoScriptOutputDir, ScriptTypeEn scriptType)
+        public virtual async Task GenerateProtoScript(string metaInputFile, string protoScriptOutputDir, ScriptTypeEn scriptType)
         {
             LogMessageHandler.AddInfo($"[CommonExcelHandler][GenerateProtoScript]: output: {protoScriptOutputDir}, scriptType: {scriptType}");
 
@@ -225,9 +256,11 @@ import ""{metaFileName}"";").AppendLine();
             if (!Path.Exists(listFilePath)) return;
 
             scriptHandler.GenerateProtoScript(listFilePath, protoScriptOutputDir);
+
+            await Task.CompletedTask;
         }
 
-        public virtual void GenerateProtoData(string excelInputFile, string protoDataOutputDir, bool isClient, ScriptTypeEn scriptType)
+        public virtual async Task GenerateProtoData(string excelInputFile, string protoDataOutputDir, bool isClient, ScriptTypeEn scriptType)
         {
             if (!File.Exists(excelInputFile)) throw new Exception($"[GenerateProtoData] 表路径不存在：{excelInputFile}");
             if (string.IsNullOrEmpty(protoDataOutputDir))
@@ -247,12 +280,19 @@ import ""{metaFileName}"";").AppendLine();
                 string messageName = sheetCount == 1 ? $"{excelFileName}" : $"{excelFileName}_{sheet.Name}";
                 if (!HeadInfoDic.TryGetValue(messageName, out ExcelHeadInfo headInfo)) throw new Exception($"[GenerateProtoData] 表: {messageName} 没有 headInfo");
 
+                Dictionary<ExcelFieldInfo, HashSet<string>> singleKeyDic = new();
+                HashSet<List<string>> unionKeyHash = new(new UnionKeyComparer());
+
+                foreach (ExcelFieldInfo singleKeyField in headInfo.IndependentKey) singleKeyDic.Add(singleKeyField, new());
+
                 foreach (IXLRow row in sheet.RowsUsed())
                 {
                     string typeName = row.Cell(1).GetString();
                     bool isTpyeRow = typeName.StartsWith('#');
                     if (isTpyeRow) continue;
 
+                    List<string> unionKeyList = new();
+                    
                     foreach (IXLCell cell in row.Cells(false))
                     {
                         int columnIdx = cell.Address.ColumnNumber;
@@ -262,10 +302,11 @@ import ""{metaFileName}"";").AppendLine();
                         int fieldIdx = headInfo.GetFieldIdx(columnIdx);
                         if (fieldIdx == -1) continue;
 
+                        string columnContent = cell.GetString().Trim();
                         ExcelFieldInfo fieldInfo = headInfo.Fields[fieldIdx];
                         if ((platform & fieldInfo.Platform) == 0) continue;
-
-                        string columnContent = cell.GetString().Trim();
+                        if (singleKeyDic.TryGetValue(fieldInfo, out HashSet<string> singleKeyHash) && !singleKeyHash.Add(columnContent)) throw new Exception($"[GenerateProtoData].表：{messageName} 存在了重复的独立key: {columnContent}");
+                        if (headInfo.UnionKey.Contains(fieldInfo)) unionKeyList.Add(columnContent);
 
                         //LogMessageHandler.AddWarn($"[test]. messageName: {messageName}; Address: {cell.Address}; type: {fieldInfo.Type}; columnContent: {columnContent}; platform: {platform}; fieldPlatform: {fieldInfo.Platform}; isClient: {isClient}");
                         if (ExcelUtil.IsTypeLocalizationTxt(fieldInfo.Type)
@@ -294,15 +335,19 @@ import ""{metaFileName}"";").AppendLine();
                         }
                     }
 
+                    if (unionKeyList.Count > 0 && !unionKeyHash.Add(unionKeyList)) throw new Exception($"[GenerateProtoData]. 表：{messageName} 存在了重复的联合key: {string.Join(',', unionKeyList)}");
+
                     scriptHandler.AddListScriptObj($"{messageName}{CommonExcelCfg.ProtoMetaListMessageNameSuffix}", messageName);
                 }
 
                 string protoDataOutputFile = Path.Combine(protoDataOutputDir, $"{messageName}{GeneralCfg.ProtoDataFileSuffix}");
                 scriptHandler.SerializeObjInProto($"{messageName}{CommonExcelCfg.ProtoMetaListMessageNameSuffix}", protoDataOutputFile);
             }
+
+            await Task.CompletedTask;
         }
 
-        public virtual void GenerateExcelScript(string excelInputFile, string excelScriptOutputDir, bool isClient, ScriptTypeEn scriptType)
+        public virtual async Task GenerateExcelScript(string excelInputFile, string excelScriptOutputDir, bool isClient, ScriptTypeEn scriptType)
         {
             if (!File.Exists(excelInputFile)) throw new Exception($"[GenerateExcelScript] 表路径不存在：{excelInputFile}");
             if (string.IsNullOrEmpty(excelScriptOutputDir))
@@ -324,7 +369,7 @@ import ""{metaFileName}"";").AppendLine();
                 if (!HeadInfoDic.TryGetValue(messageName, out ExcelHeadInfo headInfo)) throw new Exception($"[GenerateProtoData] 表: {messageName} 没有 headInfo");
 
                 string outputFilePath = Path.Combine(excelScriptOutputDir, excelRelativeDir??"", $"{messageName}{GeneralCfg.ExcelScriptFileSuffix(scriptType)}");
-                scriptHandler.GenerateExcelScript(headInfo, outputFilePath, isClient);
+                await scriptHandler.GenerateExcelScript(headInfo, outputFilePath, isClient);
             }
         }
     }

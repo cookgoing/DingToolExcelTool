@@ -24,12 +24,12 @@
             EnumDic?.Clear();
         }
 
-        public override void GenerateExcelHeadInfo(string excelInputFile)
+        public override async Task GenerateExcelHeadInfo(string excelInputFile)
         {
             if (EnumDic == null) throw new Exception("[GenerateExcelHeadInfo] EnunDic == null");
             if (!File.Exists(excelInputFile)) throw new Exception($"[GenerateExcelHeadInfo] 表路径不存在：{excelInputFile}");
 
-            base.GenerateExcelHeadInfo(excelInputFile);
+            await base.GenerateExcelHeadInfo(excelInputFile);
 
             string excelFileName = Path.GetFileNameWithoutExtension(excelInputFile);
             using XLWorkbook wb = new (excelInputFile);
@@ -123,7 +123,7 @@
             }
         }
 
-        public override void GenerateProtoMeta(string metaOutputFile, bool isClient)
+        public override async Task GenerateProtoMeta(string metaOutputFile, bool isClient)
         {
             LogMessageHandler.AddInfo($"[EnumExcelHandler][GenerateProtoMeta]: output: {metaOutputFile}, isClient: {isClient}");
             if (string.IsNullOrEmpty(metaOutputFile))
@@ -157,13 +157,13 @@ package {GeneralCfg.ProtoMetaPackageName};").AppendLine();
                 metaWriter.AppendLine("}").AppendLine();
             }
 
-            metaSW.Write(metaWriter);
+            await metaSW.WriteAsync(metaWriter);
             metaSW.Close();
             metaWriter.Clear();
         }
 
 
-        public override void GenerateProtoData(string excelInputFile, string protoDataOutputFile, bool isClient, ScriptTypeEn scriptType) { }
-        public override void GenerateExcelScript(string excelInputFile, string excelScriptOutputDir, bool isClient, ScriptTypeEn scriptType) { }
+        public override async Task GenerateProtoData(string excelInputFile, string protoDataOutputFile, bool isClient, ScriptTypeEn scriptType) => await Task.CompletedTask;
+        public override async Task GenerateExcelScript(string excelInputFile, string excelScriptOutputDir, bool isClient, ScriptTypeEn scriptType) => await Task.CompletedTask;
     }
 }

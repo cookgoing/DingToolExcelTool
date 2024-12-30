@@ -202,7 +202,7 @@
         }
 
 
-        public void GenerateExcelScript(ExcelHeadInfo headInfo, string excelScriptOutputFile, bool isClient)
+        public async Task GenerateExcelScript(ExcelHeadInfo headInfo, string excelScriptOutputFile, bool isClient)
         {
             if (headInfo == null) throw new Exception($"[GenerateExcelScript] headInfo == null");
             if (string.IsNullOrEmpty(excelScriptOutputFile)) throw new Exception($"[GenerateExcelScript] 没有 Excel Script 的输出路径");
@@ -324,7 +324,7 @@ namespace {GeneralCfg.ProtoMetaPackageName}
 }}
 ");
 
-            sw.Write(scriptSB.ToString());
+            await sw.WriteAsync(scriptSB.ToString());
             sw.Flush();
         }
 
