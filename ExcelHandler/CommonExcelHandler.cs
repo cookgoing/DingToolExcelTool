@@ -9,6 +9,7 @@
     using DingToolExcelTool.Configure;
     using DingToolExcelTool.ScriptHandler;
     using System.Diagnostics.CodeAnalysis;
+    using DocumentFormat.OpenXml.Spreadsheet;
 
     internal class UnionKeyComparer : IEqualityComparer<List<string>>
     {
@@ -130,12 +131,13 @@
                                     case KeyType.Union: headInfo.UnionKey.Add(fieldInfo); break;
                                 }
 
-                                string typeStr = ExcelUtil.ClearKeySymbol(columnContent);
+                                fieldInfo.LocalizationTxt = ExcelUtil.IsTypeLocalizationTxt(columnContent);
+                                fieldInfo.LocalizationImg = ExcelUtil.IsTypeLocalizationImg(columnContent);
+
+                                string typeStr = ExcelUtil.ClearTypeSymbol(columnContent);
                                 if (!ExcelUtil.IsValidType(typeStr)) throw new Exception($"[GenerateExcelHeadInfo] 表：{headInfo.MessageName}, address: {cell.Address} 类型不合法：{typeStr}; 只能是基础数据类型：int, long, double, bool, string, dateTime; 以及预定义的枚举类型; 或者是数组和字典");
 
                                 fieldInfo.Type = typeStr;
-                                fieldInfo.LocalizationTxt = ExcelUtil.IsTypeLocalizationTxt(typeStr);
-                                fieldInfo.LocalizationImg = ExcelUtil.IsTypeLocalizationImg(typeStr);
                                 break;
                             case HeadType.platform:
                                 string columnContentLower = columnContent.ToLower();
@@ -161,6 +163,12 @@
 
                     firstRow = false;
                 }
+
+                if (headInfo.Fields == null || headInfo.Fields.Count == 0)
+                {
+                    LogMessageHandler.AddWarn($"[CommonExcelHandler.GenerateExcelHeadInfo] sheet: {excelFileName}_{sheet.Name} 没有字段，将不会导出");
+                    continue;
+                } 
 
                 headInfo.Trim();
                 headInfo.Sort();
@@ -280,65 +288,7 @@ import ""{metaFileName}"";").AppendLine();
                 string messageName = sheetCount == 1 ? $"{excelFileName}" : $"{excelFileName}_{sheet.Name}";
                 if (!HeadInfoDic.TryGetValue(messageName, out ExcelHeadInfo headInfo)) throw new Exception($"[GenerateProtoData] 表: {messageName} 没有 headInfo");
 
-                Dictionary<ExcelFieldInfo, HashSet<string>> singleKeyDic = new();
-                HashSet<List<string>> unionKeyHash = new(new UnionKeyComparer());
-
-                foreach (ExcelFieldInfo singleKeyField in headInfo.IndependentKey) singleKeyDic.Add(singleKeyField, new());
-
-                foreach (IXLRow row in sheet.RowsUsed())
-                {
-                    string typeName = row.Cell(1).GetString();
-                    bool isTpyeRow = typeName.StartsWith('#');
-                    if (isTpyeRow) continue;
-
-                    List<string> unionKeyList = new();
-                    
-                    foreach (IXLCell cell in row.Cells(false))
-                    {
-                        int columnIdx = cell.Address.ColumnNumber;
-                        if (columnIdx == 1) continue;
-                        if (ExcelUtil.IsRearMergedCell(cell)) continue;
-
-                        int fieldIdx = headInfo.GetFieldIdx(columnIdx);
-                        if (fieldIdx == -1) continue;
-
-                        string columnContent = cell.GetString().Trim();
-                        ExcelFieldInfo fieldInfo = headInfo.Fields[fieldIdx];
-                        if ((platform & fieldInfo.Platform) == 0) continue;
-                        if (singleKeyDic.TryGetValue(fieldInfo, out HashSet<string> singleKeyHash) && !singleKeyHash.Add(columnContent)) throw new Exception($"[GenerateProtoData].表：{messageName} 存在了重复的独立key: {columnContent}");
-                        if (headInfo.UnionKey.Contains(fieldInfo)) unionKeyList.Add(columnContent);
-
-                        //LogMessageHandler.AddWarn($"[test]. messageName: {messageName}; Address: {cell.Address}; type: {fieldInfo.Type}; columnContent: {columnContent}; platform: {platform}; fieldPlatform: {fieldInfo.Platform}; isClient: {isClient}");
-                        if (ExcelUtil.IsTypeLocalizationTxt(fieldInfo.Type)
-                            || ExcelUtil.IsTypeLocalizationImg(fieldInfo.Type)
-                            || ExcelUtil.IsBaseType(fieldInfo.Type))
-                        {
-                            scriptHandler.SetScriptValue(messageName, fieldInfo.Name, fieldInfo.Type, columnContent);
-                        }
-                        else if (ExcelUtil.IsArrType(fieldInfo.Type))
-                        {
-                            scriptHandler.AddScriptList(messageName, fieldInfo.Name, fieldInfo.Type, columnContent);
-                        }
-                        else if (ExcelUtil.IsMapType(fieldInfo.Type))
-                        {
-                            int relativeColumnIdx = columnIdx - fieldInfo.StartColumnIdx;
-                            bool isKey = relativeColumnIdx % 2 == 0;
-                            if (!isKey) continue;
-
-                            IXLCell nextCell = row.Cell(++columnIdx);
-                            fieldIdx = headInfo.GetFieldIdx(columnIdx);
-                            if (nextCell == null || fieldIdx == -1 || !ExcelUtil.IsMapType(headInfo.Fields[fieldIdx].Type)) throw new Exception($"[GenerateProtoData] 表：{messageName} 没有这个字段：{fieldInfo.Name} || 格式不合法，这里应该是一个字典值。 Address: {nextCell?.Address}");
-
-                            string keyData = columnContent;
-                            string valueData = nextCell.GetString().Trim();
-                            scriptHandler.AddScriptMap(messageName, fieldInfo.Name, fieldInfo.Type, keyData, valueData);
-                        }
-                    }
-
-                    if (unionKeyList.Count > 0 && !unionKeyHash.Add(unionKeyList)) throw new Exception($"[GenerateProtoData]. 表：{messageName} 存在了重复的联合key: {string.Join(',', unionKeyList)}");
-
-                    scriptHandler.AddListScriptObj($"{messageName}{CommonExcelCfg.ProtoMetaListMessageNameSuffix}", messageName);
-                }
+                AddProtoDataInScriptObj(scriptHandler, platform, sheet, messageName, headInfo);
 
                 string protoDataOutputFile = Path.Combine(protoDataOutputDir, $"{messageName}{GeneralCfg.ProtoDataFileSuffix}");
                 scriptHandler.SerializeObjInProto($"{messageName}{CommonExcelCfg.ProtoMetaListMessageNameSuffix}", protoDataOutputFile);
@@ -366,11 +316,74 @@ import ""{metaFileName}"";").AppendLine();
             foreach (IXLWorksheet sheet in wb.Worksheets)
             {
                 string messageName = sheetCount == 1 ? $"{excelFileName}" : $"{excelFileName}_{sheet.Name}";
-                if (!HeadInfoDic.TryGetValue(messageName, out ExcelHeadInfo headInfo)) throw new Exception($"[GenerateProtoData] 表: {messageName} 没有 headInfo");
+                if (!HeadInfoDic.TryGetValue(messageName, out ExcelHeadInfo headInfo)) continue;
 
                 string outputFilePath = Path.Combine(excelScriptOutputDir, excelRelativeDir??"", $"{messageName}{GeneralCfg.ExcelScriptFileSuffix(scriptType)}");
-                await scriptHandler.GenerateExcelScript(headInfo, outputFilePath, isClient);
+                await scriptHandler.GenerateExcelScript(headInfo, headInfo.MessageName, outputFilePath, isClient);
             }
+        }
+
+
+        protected virtual void AddProtoDataInScriptObj(IScriptExcelHandler scriptHandler, PlatformType platform, IXLWorksheet sheet, string messageName, ExcelHeadInfo headInfo)
+        {
+            Dictionary<ExcelFieldInfo, HashSet<string>> singleKeyDic = new();
+            HashSet<List<string>> unionKeyHash = new(new UnionKeyComparer());
+
+            foreach (ExcelFieldInfo singleKeyField in headInfo.IndependentKey) singleKeyDic.Add(singleKeyField, new());
+
+            foreach (IXLRow row in sheet.RowsUsed())
+            {
+                string typeName = row.Cell(1).GetString();
+                bool isTpyeRow = typeName.StartsWith('#');
+                if (isTpyeRow) continue;
+
+                List<string> unionKeyList = new();
+
+                foreach (IXLCell cell in row.Cells(false))
+                {
+                    int columnIdx = cell.Address.ColumnNumber;
+                    if (columnIdx == 1) continue;
+                    if (ExcelUtil.IsRearMergedCell(cell)) continue;
+
+                    int fieldIdx = headInfo.GetFieldIdx(columnIdx);
+                    if (fieldIdx == -1) continue;
+
+                    string columnContent = cell.GetString().Trim();
+                    ExcelFieldInfo fieldInfo = headInfo.Fields[fieldIdx];
+                    if ((platform & fieldInfo.Platform) == 0) continue;
+                    if (singleKeyDic.TryGetValue(fieldInfo, out HashSet<string> singleKeyHash) && !singleKeyHash.Add(columnContent)) throw new Exception($"[GenerateProtoData].表：{messageName} 存在了重复的独立key: {columnContent}");
+                    if (headInfo.UnionKey.Contains(fieldInfo)) unionKeyList.Add(columnContent);
+
+                    //LogMessageHandler.AddWarn($"[test]. messageName: {messageName}; Address: {cell.Address}; type: {fieldInfo.Type}; columnContent: {columnContent}; platform: {platform}; fieldPlatform: {fieldInfo.Platform}; isClient: {isClient}");
+                    if (ExcelUtil.IsBaseType(fieldInfo.Type))
+                    {
+                        scriptHandler.SetScriptValue(messageName, fieldInfo.Name, fieldInfo.Type, columnContent);
+                    }
+                    else if (ExcelUtil.IsArrType(fieldInfo.Type))
+                    {
+                        scriptHandler.AddScriptList(messageName, fieldInfo.Name, fieldInfo.Type, columnContent);
+                    }
+                    else if (ExcelUtil.IsMapType(fieldInfo.Type))
+                    {
+                        int relativeColumnIdx = columnIdx - fieldInfo.StartColumnIdx;
+                        bool isKey = relativeColumnIdx % 2 == 0;
+                        if (!isKey) continue;
+
+                        IXLCell nextCell = row.Cell(++columnIdx);
+                        fieldIdx = headInfo.GetFieldIdx(columnIdx);
+                        if (nextCell == null || fieldIdx == -1 || !ExcelUtil.IsMapType(headInfo.Fields[fieldIdx].Type)) throw new Exception($"[GenerateProtoData] 表：{messageName} 没有这个字段：{fieldInfo.Name} || 格式不合法，这里应该是一个字典值。 Address: {nextCell?.Address}");
+
+                        string keyData = columnContent;
+                        string valueData = nextCell.GetString().Trim();
+                        scriptHandler.AddScriptMap(messageName, fieldInfo.Name, fieldInfo.Type, keyData, valueData);
+                    }
+                }
+
+                if (unionKeyList.Count > 0 && !unionKeyHash.Add(unionKeyList)) throw new Exception($"[GenerateProtoData]. 表：{messageName} 存在了重复的联合key: {string.Join(',', unionKeyList)}");
+
+                scriptHandler.AddListScriptObj($"{messageName}{CommonExcelCfg.ProtoMetaListMessageNameSuffix}", messageName);
+            }
+
         }
     }
 }

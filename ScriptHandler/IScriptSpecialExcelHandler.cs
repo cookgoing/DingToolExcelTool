@@ -7,6 +7,6 @@
     {
         Task GenerateErrorCodeScript(ConcurrentDictionary<string, ErrorCodeScriptInfo> errorCodeHeadDic, string frameOutputFile, string businessOutputFile);
 
-        Task GenerateSingleScript(ConcurrentDictionary<string, SingleExcelHeadInfo> singleHeadDic, string outputDir, bool isClient);
+        Task GenerateSingleScript(SingleExcelHeadInfo singleHeadInfo, string outputFile, bool isClient);
     }
 }

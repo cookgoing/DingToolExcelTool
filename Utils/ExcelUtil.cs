@@ -18,13 +18,20 @@
 
             return KeyType.No;
         }
-        public static string ClearKeySymbol(string typeStr)
+        public static string ClearTypeSymbol(string typeStr)
         {
+            string newType = typeStr;
             KeyType keyType = GetKeyType(typeStr);
-            if (keyType == KeyType.Union) return typeStr.Replace(GeneralCfg.UnionKeySymbol, string.Empty);
-            if (keyType == KeyType.Independent) return typeStr.Replace(GeneralCfg.IndependentKeySymbol, string.Empty);
+            if (keyType == KeyType.Union) newType = typeStr.Replace(GeneralCfg.UnionKeySymbol, string.Empty);
+            if (keyType == KeyType.Independent) newType = typeStr.Replace(GeneralCfg.IndependentKeySymbol, string.Empty);
 
-            return typeStr;
+            if (IsTypeLocalizationTxt(newType) || IsTypeLocalizationImg(newType))
+            {
+                if (keyType != KeyType.No) throw new Exception($"[ClearTypeSymbol]. 类型不能是主键和本地化共存的. typeStr: {typeStr}");
+                newType = "string";
+            }
+
+            return newType;
         }
 
 
@@ -55,7 +62,6 @@
 
         public static string? ToProtoType(string typeStr)
         {
-            if (IsTypeLocalizationTxt(typeStr) || IsTypeLocalizationImg(typeStr)) return "string";
             if (IsBaseType(typeStr)) return GeneralCfg.BaseType2ProtoMap[typeStr];
             if (IsArrType(typeStr))
             {

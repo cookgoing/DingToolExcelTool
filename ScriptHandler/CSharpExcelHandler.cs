@@ -71,7 +71,6 @@
 
         public string ExcelType2ScriptTypeStr(string typeStr)
         {
-            if (ExcelUtil.IsTypeLocalizationTxt(typeStr) || ExcelUtil.IsTypeLocalizationImg(typeStr)) return "string";
             if (ExcelUtil.IsBaseType(typeStr)) return BaseType2ScriptMap[typeStr];
             if (ExcelUtil.IsArrType(typeStr))
             {
@@ -202,7 +201,7 @@
         }
 
 
-        public async Task GenerateExcelScript(ExcelHeadInfo headInfo, string excelScriptOutputFile, bool isClient)
+        public async Task GenerateExcelScript(ExcelHeadInfo headInfo, string messageName, string excelScriptOutputFile, bool isClient)
         {
             if (headInfo == null) throw new Exception($"[GenerateExcelScript] headInfo == null");
             if (string.IsNullOrEmpty(excelScriptOutputFile)) throw new Exception($"[GenerateExcelScript] 没有 Excel Script 的输出路径");
@@ -211,7 +210,6 @@
             if (!Directory.Exists(dirPath)) Directory.CreateDirectory(dirPath);
 
             PlatformType platform = isClient ? PlatformType.Client : PlatformType.Server;
-            string messageName = headInfo.MessageName;
             string scriptName = Path.GetFileNameWithoutExtension(excelScriptOutputFile);
             string dataFileName = $"{messageName}{GeneralCfg.ProtoDataFileSuffix}";
             using StreamWriter sw = new(excelScriptOutputFile);
@@ -350,8 +348,7 @@ namespace {GeneralCfg.ProtoMetaPackageName}
 
         public object ExcelType2ScriptType(string typeStr, string valueStr)
         {
-            if (ExcelUtil.IsTypeLocalizationTxt(typeStr) || ExcelUtil.IsTypeLocalizationImg(typeStr)) return valueStr;
-            else if (ExcelUtil.IsBaseType(typeStr))
+            if (ExcelUtil.IsBaseType(typeStr))
             {
                 switch (typeStr)
                 {
@@ -371,7 +368,7 @@ namespace {GeneralCfg.ProtoMetaPackageName}
                         if (!bool.TryParse(valueStr, out bool boolValue)) throw new Exception($"[CSharpHandler] 内容不能转换。 type: {typeStr}; value: {valueStr}");
 
                         return boolValue;
-                    case "string": return valueStr;
+                    case "string": return valueStr ?? string.Empty;
                     default: throw new Exception($"[CSharpHandler] 存在不合法的基础类型：{typeStr}");
                 }
             }

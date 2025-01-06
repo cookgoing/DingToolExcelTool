@@ -5,6 +5,7 @@
     using DingToolExcelTool.Data;
     using DingToolExcelTool.Configure;
     using System.Collections.Concurrent;
+    using DingToolExcelTool.Utils;
 
     internal class CSharpSpecialExcelHandler : Singleton<CSharpSpecialExcelHandler>, IScriptSpecialExcelHandler
     {
@@ -34,29 +35,26 @@
             await WriteErrorCodeScript(businessOutputFile, businessFieldSB.ToString(), SpecialExcelCfg.ErrorCodeBusinessPackageName);
         }
 
-        public async Task GenerateSingleScript(ConcurrentDictionary<string, SingleExcelHeadInfo> singleHeadDic, string outputDir, bool isClient)
+        public async Task GenerateSingleScript(SingleExcelHeadInfo singleHeadInfo, string outputFile, bool isClient)
         {
-            if (string.IsNullOrEmpty(outputDir)) throw new Exception("[GenerateSingleScript]. 没有输出路径");
+            if (string.IsNullOrEmpty(outputFile)) throw new Exception("[GenerateSingleScript]. 没有输出路径");
+
+            string dirPath = Path.GetDirectoryName(outputFile);
+            if (!Directory.Exists(dirPath)) Directory.CreateDirectory(dirPath);
 
             PlatformType platform = isClient ? PlatformType.Client : PlatformType.Server;
-            if (!Directory.Exists(outputDir)) Directory.CreateDirectory(outputDir);
-
-            foreach (SingleExcelHeadInfo singleHeadInfo in singleHeadDic.Values)
+            StringBuilder fieldSB = new();
+            foreach (SingleExcelFieldInfo fieldInfo in singleHeadInfo.Fields)
             {
-                StringBuilder fieldSB = new();
-                foreach (SingleExcelFieldInfo fieldInfo in singleHeadInfo.Fields)
-                {
-                    if ((platform & fieldInfo.Platform) == 0) continue;
+                if ((platform & fieldInfo.Platform) == 0) continue;
 
-                    string filedValue = CSharpExcelHandler.Instance.ExcelType2ScriptType(fieldInfo.Type, fieldInfo.Value).ToString();
-                    if (fieldInfo.Type == "string") filedValue = $"\"{filedValue}\"";
-                    else if (fieldInfo.Type == "bool") filedValue = filedValue?.ToLower();
-                    fieldSB.Append($"\t\tpublic readonly static {CSharpExcelHandler.Instance.ExcelType2ScriptTypeStr(fieldInfo.Type)} {fieldInfo.Name} = {filedValue};").AppendLine(string.IsNullOrEmpty(fieldInfo.Comment) ? null : "//" + fieldInfo.Comment) ;
-                }
-
-                string filePath = Path.Combine(outputDir, $"{singleHeadInfo.ScriptName}{GeneralCfg.ExcelScriptFileSuffix(ScriptTypeEn.CSharp)}");
-                await WriteSingleExcelScript(singleHeadInfo.ScriptName, filePath, fieldSB.ToString());
+                string filedValue = CSharpExcelHandler.Instance.ExcelType2ScriptType(fieldInfo.Type, fieldInfo.Value).ToString();
+                if (fieldInfo.Type == "string") filedValue = $"\"{filedValue}\"";
+                else if (fieldInfo.Type == "bool") filedValue = filedValue?.ToLower();
+                fieldSB.Append($"\t\tpublic readonly static {CSharpExcelHandler.Instance.ExcelType2ScriptTypeStr(fieldInfo.Type)} {fieldInfo.Name} = {filedValue};").AppendLine(string.IsNullOrEmpty(fieldInfo.Comment) ? null : "//" + fieldInfo.Comment);
             }
+
+            await WriteSingleExcelScript(singleHeadInfo.ScriptName, outputFile, fieldSB.ToString());
         }
 
         private async Task WriteErrorCodeScript(string outputPath, string fieldStr, string packageName)

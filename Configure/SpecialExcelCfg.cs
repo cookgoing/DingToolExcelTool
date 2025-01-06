@@ -12,6 +12,7 @@
         public const string ErrorCodeBusinessScriptFileName = "BusinessErrorCode";
         public const string ErrorCodeFramePackageName = "DingFrame";
         public const string ErrorCodeBusinessPackageName = "Business.Data";
+        public const string ErrorCodeProtoMessageName = "ErrorCodeCfg";
         public const string ErrorCodeScriptName = "ErrorCode";
         public const string ErrorCodeFrameSheetName = "Common";
 

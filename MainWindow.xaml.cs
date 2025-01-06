@@ -314,7 +314,7 @@
             }
             catch (Exception e)
             {
-                LogMessageHandler.AddError($"{e.Message}\n{e.StackTrace}");
+                LogMessageHandler.LogException(e);
             }
             finally
             {

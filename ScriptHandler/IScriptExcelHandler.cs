@@ -20,6 +20,6 @@
         void AddListScriptObj(string scriptName, string itemScriptName);
         void SerializeObjInProto(string scriptName, string outputFilePath);
 
-        Task GenerateExcelScript(ExcelHeadInfo headInfo, string excelScriptOutputFile, bool isClient);
+        Task GenerateExcelScript(ExcelHeadInfo headInfo, string messageName, string excelScriptOutputFile, bool isClient);
     }
 }

@@ -50,6 +50,12 @@
                     firstColumn = false;
                 }
 
+                if (headInfo.Fields == null || headInfo.Fields.Count == 0)
+                {
+                    LogMessageHandler.AddWarn($"[SingleExcelHandler.GenerateExcelHeadInfo] sheet: {excelFileName}_{sheet.Name} 没有字段，将不会导出");
+                    continue;
+                }
+
                 headInfo.Trim();
                 headInfo.Sort();
                 HeadInfoDic.TryAdd(headInfo.ScriptName, headInfo);
@@ -74,9 +80,19 @@
             IScriptSpecialExcelHandler scriptHandler = ExcelUtil.GetScriptSpecialExcelHandler(scriptType);
             string excelRelativePath = ExcelUtil.GetExcelRelativePath(excelInputFile);
             string excelRelativeDir = Path.GetDirectoryName(excelRelativePath);
-            string scriptDir = Path.Combine(excelScriptOutputDir, excelRelativeDir);
+            string excelFileName = Path.GetFileNameWithoutExtension(excelRelativePath);
+            string excelName = excelFileName?.Replace(SpecialExcelCfg.SingleExcelPrefix, string.Empty);
+            
+            using XLWorkbook wb = new(excelInputFile);
+            int sheetCount = wb.Worksheets.Count;
+            foreach (IXLWorksheet sheet in wb.Worksheets)
+            {
+                string scriptName = sheetCount == 1 ? $"{excelName}" : $"{excelName}_{sheet.Name}";
+                if (!HeadInfoDic.TryGetValue(scriptName, out SingleExcelHeadInfo headInfo)) continue;
 
-            await scriptHandler.GenerateSingleScript(HeadInfoDic, scriptDir, isClient);
+                string outputFilePath = Path.Combine(excelScriptOutputDir, excelRelativeDir ?? "", $"{scriptName}{GeneralCfg.ExcelScriptFileSuffix(scriptType)}");
+                await scriptHandler.GenerateSingleScript(headInfo, outputFilePath, isClient);
+            }
         }
 
 
@@ -122,7 +138,6 @@
                         }
 
                         if (!nameSet.Add(rowContent)) throw new Exception($"[ParseExceHead] 表：{headInfo.ScriptName}。出现了同名的字段：{rowContent}");
-
                         fieldInfo.Name = rowContent;
                         break;
                     case HeadType.type:
@@ -132,12 +147,13 @@
                             continue;
                         }
 
-                        string typeStr = ExcelUtil.ClearKeySymbol(rowContent);
+                        fieldInfo.LocalizationTxt = ExcelUtil.IsTypeLocalizationTxt(rowContent);
+                        fieldInfo.LocalizationImg = ExcelUtil.IsTypeLocalizationImg(rowContent);
+
+                        string typeStr = ExcelUtil.ClearTypeSymbol(rowContent);
                         if (!ExcelUtil.IsValidType(typeStr)) throw new Exception($"[ParseExceHead] 表：{headInfo.ScriptName} 类型不合法：{typeStr}; 只能是基础数据类型：int, long, double, bool, string, dateTime; 以及预定义的枚举类型; 或者是数组和字典");
 
                         fieldInfo.Type = typeStr;
-                        fieldInfo.LocalizationTxt = ExcelUtil.IsTypeLocalizationTxt(typeStr);
-                        fieldInfo.LocalizationImg = ExcelUtil.IsTypeLocalizationImg(typeStr);
                         break;
                     case HeadType.platform:
                         string columnContentLower = rowContent.ToLower();
