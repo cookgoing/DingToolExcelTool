@@ -7,6 +7,7 @@
     using System.IO;
     using System.Reflection;
     using System.Text;
+    using System.Collections.Concurrent;
     using Google.Protobuf;
     using DingToolExcelTool.Configure;
     using DingToolExcelTool.Utils;
@@ -26,8 +27,8 @@
         public string Suffix => ".cs";
 
         protected Assembly assembly;
-        protected Dictionary<string, Type> typeDic = new();
-        protected Dictionary<string, object> objDic = new();
+        protected ConcurrentDictionary<string, Type> typeDic = new();
+        protected ConcurrentDictionary<string, object> objDic = new();
 
         public void DynamicCompile(string[] csCodes)
         {
@@ -333,18 +334,18 @@ namespace {GeneralCfg.ProtoMetaPackageName}
             if (!typeDic.TryGetValue(scriptName, out Type type))
             {
                 type = assembly.GetType(fullScriptName) ?? throw new Exception($"[GenerateTypeObj] proto生成的C#程序集不存在 这个类型：{fullScriptName}");
-                typeDic.Add(scriptName, type);
+                typeDic.TryAdd(scriptName, type);
             }
             if (!objDic.TryGetValue(scriptName, out object obj))
             {
                 obj = Activator.CreateInstance(type) ?? throw new Exception($"[GenerateTypeObj] 无法生成实例：type: {type}");
-                objDic.Add(scriptName, obj);
+                objDic.TryAdd(scriptName, obj);
             }
 
             return (type, obj);
         }
 
-        public bool RemoveObj(string scriptName) => objDic.Remove(scriptName);
+        public bool RemoveObj(string scriptName) => objDic.TryRemove(scriptName, out _);
 
         public object ExcelType2ScriptType(string typeStr, string valueStr)
         {
