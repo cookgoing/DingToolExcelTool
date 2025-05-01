@@ -294,6 +294,8 @@ namespace {GeneralCfg.ProtoMetaPackageName}
 
         public static {scriptName} CreateIns()
         {{
+            if (Ins != null) return Ins;
+
             Ins = new {scriptName}();
             Ins.ParseProto();
             Ins.GenerateKV();
