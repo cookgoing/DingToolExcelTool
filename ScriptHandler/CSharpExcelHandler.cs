@@ -130,8 +130,8 @@
             if (ExcelUtil.IsArrType(typeStr) || ExcelUtil.IsMapType(typeStr)) throw new Exception($"[SetScriptProperty] 逻辑错误 要修改的数据是数组或者字典，不能使用这个方法");
 
             var (type, obj) = GetTypeObj(scriptName);
-            fieldName = FieldNameInProtoCS(fieldName);
-            FieldInfo fieldInfo = type.GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance) ?? throw new Exception($"[SetScriptProperty] C#脚本[{scriptName}]中，没有这个字段：{fieldName}");
+            string csFieldName = FieldNameInProtoCS(fieldName);
+            FieldInfo fieldInfo = type.GetField(csFieldName, BindingFlags.NonPublic | BindingFlags.Instance) ?? throw new Exception($"[SetScriptProperty] C#脚本[{scriptName}]中，没有这个字段：{csFieldName}; excel field name: {fieldName}");
             object value = ExcelType2ScriptType(typeStr, valueStr);
             fieldInfo.SetValue(obj, value);
         }
@@ -388,13 +388,10 @@ namespace {GeneralCfg.ProtoMetaPackageName}
             else throw new Exception($"[CSharpHandler] 未知的类型：{typeStr}");
         }
 
-        public string FieldNameInProtoCS(string fieldName) => fieldName.ToLower() + "_";
+        public string FieldNameInProtoCS(string fieldName) => $"{NameConverter.ConvertToCamelCase(fieldName)}_";
 
-        public string PropertyNameInProtoCS(string fieldName)
-        {
-            StringBuilder sb = new StringBuilder(fieldName);
-            sb[0] = char.ToUpper(sb[0]);
-            return sb.ToString();
-        }
+        public string PropertyNameInProtoCS(string fieldName) => NameConverter.ConvertToPascalCase(fieldName);
+
+        
     }
 }
